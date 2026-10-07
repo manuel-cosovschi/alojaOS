@@ -1,0 +1,24 @@
+{
+  "name": "alojaos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AlojaOS — el sistema de reservas de tu complejo",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:test": "./scripts/prueba-local.sh",
+    "aislamiento": "tsx scripts/aislamiento.ts",
+    "sin-marca": "tsx scripts/sin-marca.ts",
+    "test": "npm run typecheck && npm run sin-marca && npm run test:reglas",
+    "test:reglas": "tsx src/lib/__tests__/fechas.manual.mts && tsx src/lib/__tests__/precios.manual.mts && tsx src/lib/__tests__/calendario.manual.mts && tsx src/lib/__tests__/temporada.manual.mts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.47.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "dotenv": "^17.3.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0"
+  }
+}
