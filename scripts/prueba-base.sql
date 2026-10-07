@@ -476,6 +476,134 @@ BEGIN
 END $$;
 
 -- ============================================
+-- 11. Nada contesta que está bien sin estarlo
+-- ============================================
+-- De la auditoría del sistema anterior: todos sus errores devolvían éxito
+-- mientras no hacían nada. Estas pruebas son contra esa forma, no contra un bug
+-- concreto.
+DO $$
+DECLARE
+  v_id     UUID;
+  v_filas  INTEGER;
+  v JSONB;
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+
+  -- Un hold que venció hace una hora, escrito directo en la tabla (como lo
+  -- haría una importación o un camino que no pase por crear_reserva).
+  INSERT INTO reservas (complejo_id, unidad_id, check_in, check_out, estado, origen,
+                        huesped_nombre, vence_el)
+  VALUES ('aaaaaaaa-0000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000001',
+          '2027-05-10', '2027-05-14', 'HOLD_TRANSFER', 'web', 'Dejó vencer',
+          now() - interval '1 hour')
+  RETURNING id INTO v_id;
+
+  -- Leer la tabla con un filtro (lo que hacía el panel de allá) lo esconde: la
+  -- pantalla diría "0 pendientes", que es lo mismo que diría si el vencimiento
+  -- hubiera dejado de funcionar.
+  -- Se cuenta esta fila y no todos los holds: bloques anteriores dejaron
+  -- señas vivas, y contarlas haría que la prueba midiera otra cosa.
+  SELECT count(*) INTO v_filas FROM reservas
+   WHERE id = v_id AND estado = 'HOLD_TRANSFER' AND vence_el > now();
+  PERFORM pg_temp.verificar('un filtro por vencimiento esconde el hold atrasado',
+    v_filas = 0, 'justamente por eso el panel no se arma así');
+
+  -- La función lo vence primero: lo que devuelve está vivo de verdad, y el
+  -- atrasado quedó EXPIRED en vez de escondido.
+  SELECT count(*) INTO v_filas
+    FROM public.reservas_pendientes('aaaaaaaa-0000-0000-0000-000000000001') p
+   WHERE p.id = v_id;
+  PERFORM pg_temp.verificar('reservas_pendientes() no devuelve el atrasado', v_filas = 0);
+  PERFORM pg_temp.verificar('porque lo venció en vez de esconderlo',
+    (SELECT estado = 'EXPIRED' FROM reservas WHERE id = v_id),
+    (SELECT estado::text FROM reservas WHERE id = v_id));
+
+  -- Y la noche quedó libre, que es la consecuencia que importa.
+  PERFORM pg_temp.verificar('y la noche quedó libre',
+    NOT EXISTS (
+      SELECT 1 FROM public.noches_ocupadas('aaaaaaaa-0000-0000-0000-000000000001')
+       WHERE check_in = '2027-05-10'
+    ));
+
+  -- Un hold vivo sí aparece.
+  INSERT INTO reservas (complejo_id, unidad_id, check_in, check_out, estado, origen,
+                        huesped_nombre, vence_el)
+  VALUES ('aaaaaaaa-0000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000001',
+          '2027-05-20', '2027-05-24', 'HOLD_TRANSFER', 'web', 'Está pagando',
+          now() + interval '3 hours');
+  SELECT count(*) INTO v_filas
+    FROM public.reservas_pendientes('aaaaaaaa-0000-0000-0000-000000000001') p
+   WHERE p.huesped_nombre = 'Está pagando';
+  PERFORM pg_temp.verificar('un hold vivo sí aparece en pendientes', v_filas = 1,
+    format('devolvió %s', v_filas));
+
+  -- Y lo que devuelve está vivo: ninguna de las filas está atrasada. Esta es la
+  -- afirmación que allá no se podía hacer.
+  SELECT count(*) INTO v_filas
+    FROM public.reservas_pendientes('aaaaaaaa-0000-0000-0000-000000000001') p
+   WHERE p.vence_el < now();
+  PERFORM pg_temp.verificar('ninguna de las pendientes está atrasada', v_filas = 0,
+    format('%s atrasadas', v_filas));
+
+  -- El testigo: la pregunta que allá no se podía contestar.
+  v := public.salud_vencimientos('aaaaaaaa-0000-0000-0000-000000000001');
+  PERFORM pg_temp.verificar('salud_vencimientos() no deja holds atrasados',
+    (v->>'atrasadas')::int = 0, v::text);
+  PERFORM pg_temp.verificar('y dice cuándo venció el último',
+    v->>'ultimo_vencimiento' IS NOT NULL, v::text);
+
+  -- Desbloquear distingue "no había nada" de "listo".
+  INSERT INTO reservas (complejo_id, unidad_id, check_in, check_out, estado, origen)
+  VALUES ('aaaaaaaa-0000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000001',
+          '2027-06-01', '2027-06-05', 'BLOCKED', 'bloqueo');
+
+  v := public.desbloquear('aaaaaaaa-0000-0000-0000-000000000001',
+        'bbbbbbbb-0000-0000-0000-000000000001', '2027-06-02', '2027-06-04');
+  PERFORM pg_temp.verificar('desbloquear dice cuántas desbloqueó',
+    (v->>'desbloqueadas')::int = 1 AND (v->>'habia_algo')::boolean, v::text);
+
+  -- Y la noche quedó libre: lo que allá contestaba "listo" sin hacerlo.
+  PERFORM pg_temp.verificar('y la fecha quedó libre de verdad',
+    NOT EXISTS (
+      SELECT 1 FROM public.noches_ocupadas('aaaaaaaa-0000-0000-0000-000000000001')
+       WHERE check_in = '2027-06-01'
+    ));
+
+  -- Desbloquear donde no hay nada no dice "listo": dice que no había nada.
+  v := public.desbloquear('aaaaaaaa-0000-0000-0000-000000000001',
+        'bbbbbbbb-0000-0000-0000-000000000001', '2027-09-01', '2027-09-05');
+  PERFORM pg_temp.verificar('desbloquear donde no había nada lo dice',
+    (v->>'desbloqueadas')::int = 0 AND NOT (v->>'habia_algo')::boolean, v::text);
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+END $$;
+
+-- El vecino no puede leer las pendientes de otro, aunque la función sea
+-- SECURITY DEFINER y por lo tanto saltee las policies.
+DO $$
+DECLARE v_ok BOOLEAN;
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+  BEGIN
+    PERFORM count(*) FROM public.reservas_pendientes('aaaaaaaa-0000-0000-0000-000000000001');
+    v_ok := false;
+  EXCEPTION WHEN insufficient_privilege THEN
+    v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('el vecino no puede leer las pendientes ajenas', v_ok);
+
+  BEGIN
+    PERFORM public.desbloquear('aaaaaaaa-0000-0000-0000-000000000001',
+      'bbbbbbbb-0000-0000-0000-000000000001', '2027-06-01', '2027-06-05');
+    v_ok := false;
+  EXCEPTION WHEN insufficient_privilege THEN
+    v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('ni desbloquear fechas ajenas', v_ok);
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+END $$;
+
+-- ============================================
 -- Resultado
 -- ============================================
 \echo ''
