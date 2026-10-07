@@ -35,7 +35,7 @@ ni página comercial, ni alta de clientes.
 | Cotización por noche | Los comprobantes de seña y su aprobación |
 | Reglas del calendario | Los mails |
 | Temporadas configurables | La página comercial y el alta |
-| 44 pruebas de la base + 87 de las reglas | El vencimiento programado de las señas |
+| 57 pruebas de la base + 87 de las reglas | El vencimiento programado de las señas |
 
 ---
 
@@ -135,6 +135,35 @@ navegador de cualquiera— y comprueba que sea cierto. Conviene correrlo despué
 de cada migración: una policy de más, un `GRANT` que vuelve con una migración o
 una tabla nueva sin RLS lo rompen solos.
 
+### Nada contesta que está bien sin estarlo
+
+Una auditoría del sistema anterior encontró que **todos sus errores tenían la
+misma forma: devolvían éxito mientras no hacían nada.** No hubo pantallas rojas
+ni funciones caídas. La planilla devolvía las filas con la plata en blanco; la
+subida del comprobante contestaba "ok" sin guardar el archivo; el desbloqueo
+contestaba "desbloqueado" sin desbloquear; el bot daba una lista de precios bien
+formateada, de otra temporada. Dos de esos estuvieron rotos desde el primer día
+y se encontraron meses después, cuando alguien fue a buscar un número concreto y
+no cerraba.
+
+Un error ruidoso se arregla el mismo día. Esos duraron meses porque para
+notarlos había que ir a comparar un número contra la realidad.
+
+Lo que se hace distinto acá:
+
+- **La lista de señas pendientes no se arma con un filtro.** Allá el panel
+  mostraba las que no habían vencido, lo cual era correcto *mientras* el
+  mecanismo que las vencía funcionara — y "0 pendientes" era también lo que
+  diría si ese mecanismo estuviera muerto. Acá `reservas_pendientes()` vence
+  primero y devuelve después, así que lo que muestra está vivo de verdad.
+- **El vencimiento no es una tarea aparte que pueda morirse sola.** Corre
+  adentro de las funciones que consultan disponibilidad y crean reservas: si
+  esas andan, aquello anda. `salud_vencimientos()` contesta la pregunta que allá
+  no se podía contestar, y su campo `atrasadas` tiene que ser siempre 0.
+- **Una operación no puede decir que hizo algo sin haberlo hecho.**
+  `desbloquear()` devuelve cuántas filas cambió y distingue "listo" de "no había
+  nada bloqueado ahí".
+
 ---
 
 ## Correrlo
@@ -178,12 +207,13 @@ supabase/migrations/
 ├── 005_objetivos.sql      el objetivo de la temporada
 ├── 006_publico.sql        qué ve un visitante
 ├── 007_crear_reserva.sql  el único camino para ocupar una noche
-└── 008_permisos.sql       que los permisos digan lo que parecen decir
+├── 008_permisos.sql       que los permisos digan lo que parecen decir
+└── 009_nada_falla_en_silencio.sql  pendientes, testigo de vencimiento, desbloqueo
 
 scripts/
 ├── migrate.ts        Aplica las migraciones a un proyecto de Supabase
 ├── prueba-local.sh   Postgres al momento: migraciones, pruebas y la carrera
-├── prueba-base.sql   Las 44 pruebas de la base
+├── prueba-base.sql   Las 57 pruebas de la base
 ├── aislamiento.ts    Qué puede leer y escribir un visitante
 └── sin-marca.ts      Que ninguna marca de cliente esté en el código
 ```
