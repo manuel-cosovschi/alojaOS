@@ -30,3 +30,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 supabase/.temp/
+
+# El stack local que levanta scripts/dev-local.sh
+/tmp-dev

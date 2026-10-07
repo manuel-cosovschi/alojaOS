@@ -24,18 +24,18 @@ AlojaOS es un producto de **SOVARE**.
 
 ## Estado
 
-Está construida la base: el esquema, las reglas del negocio y las pruebas que
-las verifican. Todavía **no hay aplicación**: ni página de reservas, ni panel,
-ni página comercial, ni alta de clientes.
+La página de reservas anda: se elige unidad y noches, se ve el precio y queda
+la seña pendiente. Falta el panel del dueño, los comprobantes, los mails y la
+venta del producto.
 
 | Listo | Falta |
 |---|---|
-| Esquema multi-inquilino con RLS | La página pública de reservas |
-| La restricción que impide la doble reserva | El panel del dueño |
-| Cotización por noche | Los comprobantes de seña y su aprobación |
-| Reglas del calendario | Los mails |
-| Temporadas configurables | La página comercial y el alta |
-| 57 pruebas de la base + 87 de las reglas | El vencimiento programado de las señas |
+| Esquema multi-inquilino con RLS | El panel del dueño |
+| La restricción que impide la doble reserva | Subir y aprobar el comprobante de la seña |
+| **La página pública de reservas** | Los mails |
+| Cotización por noche, cruzando temporadas | La página comercial y el alta de clientes |
+| Reglas del calendario y días de entrada | El vencimiento programado (hoy corre al leer y al escribir) |
+| 57 pruebas de la base, 110 de las reglas, 23 de navegador | |
 
 ---
 
@@ -166,6 +166,29 @@ Lo que se hace distinto acá:
 
 ---
 
+## La página de reservas
+
+Cada complejo atiende en `sucomplejo.alojaos.shop`. El subdominio es lo único
+que decide qué datos se leen, así que es una decisión de seguridad: el
+middleware **borra** la cabecera `x-complejo` que llegue de afuera antes de
+escribir la suya, y un subdominio sirve sólo su página pública — el panel, el
+login y la página comercial se van al dominio principal, así que la sesión del
+dueño nunca queda atada a un subdominio.
+
+La marca del complejo llega al navegador como variables CSS que la página
+escribe desde su fila de `complejos`. En el sistema anterior la paleta estaba
+repetida inline en cinco archivos HTML.
+
+El calendario muestra qué noches están tomadas, respeta que el día de salida de
+una reserva sea día de entrada para la siguiente, y deshabilita los días de
+entrada que el complejo no permite en ese tramo. Nada de eso es la garantía:
+`crear_reserva()` vuelve a validar todo antes de escribir, y el importe que se
+guarda lo calcula la base. En el sistema anterior el alta guardaba el importe
+que mandaba la página, y un importe que llega del navegador es un dato del
+cliente.
+
+---
+
 ## Correrlo
 
 ```bash
@@ -178,7 +201,33 @@ npm run db:test # las migraciones y la base, contra un Postgres de verdad
 (`postgresql-contrib`). Levanta un cluster al momento, aplica las migraciones,
 corre las pruebas y lo tira. No toca ningún Supabase.
 
-Contra un proyecto de Supabase:
+### Tocar el producto sin tener Supabase
+
+```bash
+npm run dev:local   # Postgres + PostgREST + un complejo de ejemplo
+npm run build && npm start
+npm run prueba:navegador
+```
+
+`dev:local` levanta Postgres, le aplica las migraciones, carga un complejo
+inventado y pone adelante **PostgREST**, que es la misma capa REST que usa
+Supabase. Escribe `.env.local` apuntando ahí. Con eso el camino completo —el
+navegador pide, PostgREST ejecuta, la base decide— se prueba en cualquier
+máquina sin tocar la cuenta de nadie.
+
+Lo que no cubre es Auth: el panel del dueño necesita sesiones de verdad y eso
+lo da Supabase. Sirve para todo lo público, que es lo que ve el huésped.
+
+`prueba:navegador` corre el flujo en un Chromium de verdad: que las noches
+tomadas se vean tomadas, que el mínimo y el día de entrada se expliquen antes
+del formulario, que una estadía que cruza de temporada se cobre a dos precios,
+que una unidad sin tarifa lo diga, que reservar escriba la reserva — y que la
+página no publique el nombre ni el teléfono de ningún huésped.
+
+Esta batería existe por un motivo concreto: el sistema anterior tenía una y **se
+perdió**, porque vivía fuera del repositorio.
+
+### Contra un proyecto de Supabase
 
 ```bash
 cp .env.example .env.local   # completá URL y claves
@@ -191,13 +240,21 @@ npm run aislamiento
 ## Estructura
 
 ```
-src/lib/
-├── fechas.ts        El día de Argentina, contar noches, superposición
-├── precios.ts       Cotizar: cada noche por su fecha
-├── calendario.ts    Ventana, mínimos, días de entrada, bloques enteros
-├── temporada.ts     A qué temporada pertenece una fecha
-├── constants.ts     Valores por defecto y subdominios reservados
-└── __tests__/       Las reglas, con el reloj congelado donde hace falta
+src/
+├── app/             La página: layout, raíz y estilos
+├── components/      El calendario y el flujo de reserva
+├── actions/         reservar.ts: cáscara fina sobre crear_reserva()
+├── middleware.ts    Qué complejo sirve cada subdominio
+└── lib/
+    ├── tenant.ts    Del Host al complejo. Decisión de seguridad
+    ├── complejo.ts  Leer el complejo de la petición
+
+    ├── fechas.ts    El día de Argentina, contar noches, superposición
+    ├── precios.ts   Cotizar: cada noche por su fecha
+    ├── calendario.ts Ventana, mínimos, días de entrada, bloques enteros
+    ├── temporada.ts A qué temporada pertenece una fecha
+    ├── constants.ts Valores por defecto y subdominios reservados
+    └── __tests__/   Las reglas, con el reloj congelado donde hace falta
 
 supabase/migrations/
 ├── 001_core.sql           complejos, unidades, miembros, RLS
@@ -211,11 +268,14 @@ supabase/migrations/
 └── 009_nada_falla_en_silencio.sql  pendientes, testigo de vencimiento, desbloqueo
 
 scripts/
-├── migrate.ts        Aplica las migraciones a un proyecto de Supabase
-├── prueba-local.sh   Postgres al momento: migraciones, pruebas y la carrera
-├── prueba-base.sql   Las 57 pruebas de la base
-├── aislamiento.ts    Qué puede leer y escribir un visitante
-└── sin-marca.ts      Que ninguna marca de cliente esté en el código
+├── migrate.ts            Aplica las migraciones a un proyecto de Supabase
+├── dev-local.sh          Postgres + PostgREST + ejemplo: el producto sin Supabase
+├── ejemplo.sql           Un complejo inventado, con los casos que importan
+├── prueba-local.sh       Postgres al momento: migraciones, pruebas y la carrera
+├── prueba-base.sql       Las 57 pruebas de la base
+├── prueba-navegador.mts  El flujo de reserva en un Chromium de verdad
+├── aislamiento.ts        Qué puede leer y escribir un visitante
+└── sin-marca.ts          Que ninguna marca de cliente esté en el código
 ```
 
 Los comentarios del código explican **por qué**, no qué. Donde una regla sale

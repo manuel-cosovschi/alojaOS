@@ -4,21 +4,39 @@
   "private": true,
   "description": "AlojaOS — el sistema de reservas de tu complejo",
   "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:test": "./scripts/prueba-local.sh",
     "aislamiento": "tsx scripts/aislamiento.ts",
     "sin-marca": "tsx scripts/sin-marca.ts",
     "test": "npm run typecheck && npm run sin-marca && npm run test:reglas",
-    "test:reglas": "tsx src/lib/__tests__/fechas.manual.mts && tsx src/lib/__tests__/precios.manual.mts && tsx src/lib/__tests__/calendario.manual.mts && tsx src/lib/__tests__/temporada.manual.mts"
+    "test:reglas": "tsx src/lib/__tests__/fechas.manual.mts && tsx src/lib/__tests__/precios.manual.mts && tsx src/lib/__tests__/calendario.manual.mts && tsx src/lib/__tests__/temporada.manual.mts && tsx src/lib/__tests__/tenant.manual.mts",
+    "dev:local": "./scripts/dev-local.sh",
+    "prueba:navegador": "tsx scripts/prueba-navegador.mts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.47.0"
+    "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.47.0",
+    "next": "15.3.9",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.0",
     "dotenv": "^17.3.1",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "15.3.2",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "playwright": "^1.49.0"
   }
 }

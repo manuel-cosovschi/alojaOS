@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Los colores por defecto son neutros a propósito: son los de "todavía no se
+ * leyó ningún complejo". Los de cada cliente los escribe el layout de su página
+ * en `:root`, desde su fila de `complejos`.
+ *
+ * En el sistema anterior la paleta estaba repetida inline en cinco HTML, así que
+ * un cliente nuevo era buscar y reemplazar en cinco archivos.
+ */
+:root {
+  --marca-principal: #1f2937;
+  --marca-fondo: #f8f7f4;
+  --marca-texto: #111827;
+  --marca-acento: #b45309;
+  --fuente-titulo: ui-sans-serif, system-ui, sans-serif;
+  --fuente-cuerpo: ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background: var(--marca-fondo);
+  color: var(--marca-texto);
+  font-family: var(--fuente-cuerpo);
+}
+
+h1, h2, h3 {
+  font-family: var(--fuente-titulo);
+}
