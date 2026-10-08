@@ -42,6 +42,12 @@
 
 import { ENLACE_WHATSAPP, MAIL_CONTACTO } from '@/lib/constants';
 import { MARCA } from '@/lib/marca-alojaos';
+import {
+  PLANES,
+  MESES_QUE_SE_PAGAN_POR_ANIO,
+  CUOTAS_DE_TEMPORADA,
+  PISO_DE_LOS_SISTEMAS_GRANDES,
+} from '@/lib/precios-alojaos';
 import { Calculadora } from './Calculadora';
 import { PantallaCalendario, PantallaComprobante, PantallaPanel, Telefono } from './Pantallas';
 
@@ -829,31 +835,92 @@ function QueNoHace() {
 }
 
 function Precio() {
+  const anual = PLANES.map((p) => ({
+    ...p,
+    porTemporada: Math.round((p.mensual * MESES_QUE_SE_PAGAN_POR_ANIO) / CUOTAS_DE_TEMPORADA),
+  }));
+
   return (
     <section
       id="precio"
       className="px-5 py-16 sm:px-8 sm:py-20"
       style={{ background: MARCA.tinta, color: 'white' }}
     >
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-5xl">
         <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Cuánto cuesta</h2>
+        <p className="mt-3 max-w-2xl leading-relaxed" style={{ color: 'rgba(255,255,255,.75)' }}>
+          Por cantidad de unidades, no por cantidad de reservas. Las reservas de
+          un complejo son cuarenta en enero y dos en junio; las unidades son las
+          mismas todo el año, así que tu factura también.
+        </p>
 
-        <div className="mt-6 space-y-4 leading-relaxed" style={{ color: 'rgba(255,255,255,.8)' }}>
-          <p>
-            Un abono por mes, según cuántas unidades tengas, más una puesta a
-            punto por única vez para cargar todo. El número sale de la primera
-            charla, y preferimos decirte uno que sea el que vas a pagar antes que
-            un «desde» que después cambia.
-          </p>
-          <p>
-            Lo que sí está decidido, y no depende de la charla:
+        <div className="mt-10 grid gap-5 md:grid-cols-3">
+          {anual.map((p) => (
+            <div
+              key={p.nombre}
+              className="flex flex-col rounded-2xl p-6"
+              style={
+                p.destacado
+                  ? { background: 'white', color: MARCA.texto }
+                  : { background: 'rgba(255,255,255,.07)' }
+              }
+            >
+              {p.destacado && (
+                <span
+                  className="mb-3 inline-block w-fit rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white"
+                  style={{ background: MARCA.acento }}
+                >
+                  El más elegido
+                </span>
+              )}
+              <h3 className="text-lg font-semibold">{p.nombre}</h3>
+              <p className="text-sm" style={{ opacity: 0.6 }}>
+                {p.unidades}
+              </p>
+
+              <p className="mt-5 text-3xl font-semibold tabular-nums">
+                {plata(p.mensual)}
+                <span className="text-base font-normal" style={{ opacity: 0.6 }}>
+                  {' '}
+                  / mes
+                </span>
+              </p>
+              <p className="mt-1 text-sm" style={{ opacity: 0.7 }}>
+                + {plata(p.puestaAPunto)} de puesta a punto, por única vez
+              </p>
+
+              <p className="mt-4 text-sm leading-relaxed" style={{ opacity: 0.7 }}>
+                {p.paraQuien}
+              </p>
+
+              <p
+                className="mt-4 border-t pt-3 text-xs leading-relaxed"
+                style={{ borderColor: p.destacado ? 'rgba(0,0,0,.1)' : 'rgba(255,255,255,.15)', opacity: 0.7 }}
+              >
+                O el año completo en {CUOTAS_DE_TEMPORADA} cuotas de temporada de{' '}
+                <strong>{plata(p.porTemporada)}</strong>: pagás {MESES_QUE_SE_PAGAN_POR_ANIO} meses
+                y usás 12.
+              </p>
+            </div>
+          ))}
+        </div>
+
+        {/* La comparación que el que compara en serio ya hizo. */}
+        <div className="mt-8 rounded-2xl p-5" style={{ background: 'rgba(255,255,255,.07)' }}>
+          <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,.8)' }}>
+            Los sistemas hoteleros que se venden en Argentina para esto arrancan
+            en <strong>{plata(PISO_DE_LOS_SISTEMAS_GRANDES)} por mes más IVA</strong>{' '}
+            sólo por la administración, y cobran el motor de reservas aparte.
+            Están bien y hacen más cosas que nosotros —facturan, se conectan con
+            los portales—. Si necesitás todo eso, son la opción correcta y te lo
+            vamos a decir en la primera charla.
           </p>
         </div>
 
-        <ul className="mt-6 grid gap-4 sm:grid-cols-3">
+        <ul className="mt-8 grid gap-4 sm:grid-cols-3">
           {[
             { q: 'Cero comisión', a: 'Ni por reserva ni por huésped. Vendas mucho o poco, pagás lo mismo.' },
-            { q: 'Cero permanencia', a: 'Te vas cuando quieras y te llevás tus datos.' },
+            { q: 'Cero permanencia', a: 'Te vas cuando quieras, te llevás tus datos y te devolvemos lo que no usaste.' },
             { q: 'La seña es tuya', a: 'Va directo a tu cuenta. No pasa por nosotros.' },
           ].map((c) => (
             <li key={c.q} className="rounded-2xl p-5" style={{ background: 'rgba(255,255,255,.07)' }}>
@@ -865,21 +932,33 @@ function Precio() {
           ))}
         </ul>
 
-        <div className="mt-8 flex flex-wrap gap-3">
+        <p className="mt-6 text-sm" style={{ color: 'rgba(255,255,255,.55)' }}>
+          Precios en pesos, sin IVA. Más de 15 unidades o más de una ubicación,
+          lo hablamos.
+        </p>
+
+        <div className="mt-8">
           <a
             href={ENLACE_WHATSAPP}
             target="_blank"
             rel="noopener"
-            className="rounded-2xl px-6 py-3.5 font-semibold text-white"
+            className="inline-block rounded-2xl px-6 py-3.5 font-semibold text-white"
             style={{ background: MARCA.acento }}
           >
-            Pedí tu número por WhatsApp
+            Escribinos y lo vemos con tu complejo
           </a>
         </div>
       </div>
     </section>
   );
 }
+
+const plata = (n: number) =>
+  new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: 'ARS',
+    maximumFractionDigits: 0,
+  }).format(n);
 
 function Preguntas() {
   const preguntas = [
