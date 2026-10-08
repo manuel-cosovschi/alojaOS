@@ -854,7 +854,7 @@ function Precio() {
           mismas todo el año, así que tu factura también.
         </p>
 
-        <div className="mt-10 grid gap-5 md:grid-cols-3">
+        <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {anual.map((p) => (
             <div
               key={p.nombre}
@@ -878,7 +878,14 @@ function Precio() {
                 {p.unidades}
               </p>
 
-              <p className="mt-5 text-3xl font-semibold tabular-nums">
+              {/* El «desde» va en su propia línea y no delante del número: en
+                  línea empujaba el «/ mes» al renglón siguiente y la tarjeta
+                  quedaba desalineada con las otras tres. Arriba, los cuatro
+                  números arrancan a la misma altura. */}
+              <p className="mt-5 h-4 text-sm" style={{ opacity: 0.6 }}>
+                {p.desde ? 'desde' : ''}
+              </p>
+              <p className="text-3xl font-semibold tabular-nums">
                 {plata(p.mensual)}
                 <span className="text-base font-normal" style={{ opacity: 0.6 }}>
                   {' '}
@@ -897,9 +904,15 @@ function Precio() {
                 className="mt-4 border-t pt-3 text-xs leading-relaxed"
                 style={{ borderColor: p.destacado ? 'rgba(0,0,0,.1)' : 'rgba(255,255,255,.15)', opacity: 0.7 }}
               >
-                O el año completo en {CUOTAS_DE_TEMPORADA} cuotas de temporada de{' '}
-                <strong>{plata(p.porTemporada)}</strong>: pagás {MESES_QUE_SE_PAGAN_POR_ANIO} meses
-                y usás 12.
+                {p.desde ? (
+                  <>El número final y la forma de pago salen de la primera charla.</>
+                ) : (
+                  <>
+                    O el año completo en {CUOTAS_DE_TEMPORADA} cuotas de temporada de{' '}
+                    <strong>{plata(p.porTemporada)}</strong>: pagás{' '}
+                    {MESES_QUE_SE_PAGAN_POR_ANIO} meses y usás 12.
+                  </>
+                )}
               </p>
             </div>
           ))}
@@ -933,8 +946,8 @@ function Precio() {
         </ul>
 
         <p className="mt-6 text-sm" style={{ color: 'rgba(255,255,255,.55)' }}>
-          Precios en pesos, sin IVA. Más de 15 unidades o más de una ubicación,
-          lo hablamos.
+          Precios en pesos, sin IVA. Se ajustan una vez al año, antes de la
+          temporada, y te lo avisamos antes de que pase.
         </p>
 
         <div className="mt-8">

@@ -61,6 +61,8 @@ export interface Plan {
   unidades: string;
   /** Abono mensual, en pesos. */
   mensual: number;
+  /** Si el abono es un piso y no un precio cerrado. */
+  desde?: boolean;
   /** Puesta a punto por única vez. */
   puestaAPunto: number;
   destacado?: boolean;
@@ -68,9 +70,21 @@ export interface Plan {
   paraQuien: string;
 }
 
+/**
+ * Los nombres.
+ *
+ * Nombran el TAMAÑO DEL NEGOCIO, no un nivel de producto. Nada de Básico, Pro y
+ * Enterprise: esos nombres le piden al que lee que se ubique en una escala de
+ * calidad, y al que cae en «Básico» le están diciendo que su negocio es básico.
+ *
+ * Acá el que lee se reconoce: «somos familiares», «tengo un complejo», «tengo un
+ * complejo grande». Elige el que es, no el que puede pagar. Es el mismo criterio
+ * de GastroOS —Taller, Negocio, Cocina grande, A medida— y funciona por lo
+ * mismo: el nombre contesta «¿cuál es el mío?» antes de mirar el precio.
+ */
 export const PLANES: Plan[] = [
   {
-    nombre: 'Chico',
+    nombre: 'Familiar',
     unidades: 'Hasta 5 unidades',
     mensual: 29_000,
     puestaAPunto: 65_000,
@@ -85,11 +99,31 @@ export const PLANES: Plan[] = [
     paraQuien: 'El tamaño para el que está hecho esto.',
   },
   {
-    nombre: 'Grande',
+    nombre: 'Complejo grande',
     unidades: 'De 11 a 15 unidades',
     mensual: 65_000,
     puestaAPunto: 120_000,
-    paraQuien: 'Varios bloques o más de una ubicación.',
+    paraQuien: 'Varios bloques, o unidades de distinto tipo.',
+  },
+  {
+    /**
+     * El cuarto existe para no perder al que es más grande.
+     *
+     * Antes decía «más de 15 unidades, lo hablamos» en letra chica abajo de
+     * todo, y el que tiene veinte se iba antes de leerlo. Un plan con nombre y
+     * un «desde» lo deja escribir.
+     *
+     * El «desde» son 90.000 y el número no es casual: queda apenas abajo del
+     * piso de los sistemas que compiten (91.800 + IVA sólo la administración).
+     * Hasta el plan más caro de acá entra por debajo del más barato de ellos, y
+     * eso lo puede comprobar quien quiera.
+     */
+    nombre: 'A medida',
+    unidades: 'Más de 15, o más de una ubicación',
+    mensual: 90_000,
+    desde: true,
+    puestaAPunto: 150_000,
+    paraQuien: 'Dos complejos, o uno grande con su propia administración.',
   },
 ];
 
