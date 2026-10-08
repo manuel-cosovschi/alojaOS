@@ -20,7 +20,8 @@
     "prueba:panel": "tsx scripts/prueba-panel.mts",
     "prueba:duenos": "tsx scripts/prueba-dos-duenos.mts",
     "prueba:clave-rota": "./scripts/prueba-clave-rota.sh",
-    "prueba:despliegue": "tsx scripts/prueba-despliegue.mts"
+    "prueba:despliegue": "tsx scripts/prueba-despliegue.mts",
+    "prueba:comercial": "tsx scripts/prueba-comercial.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

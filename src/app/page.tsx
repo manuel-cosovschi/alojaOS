@@ -2,7 +2,7 @@ import { leerComplejo, nochesOcupadas, slugDeLaPeticion } from '@/lib/complejo';
 import { hoyISO } from '@/lib/fechas';
 import { Reservar } from '@/components/Reservar';
 import { datosParaTransferir } from '@/actions/comprobante';
-import { Comercial } from '@/components/Comercial';
+import { Comercial } from '@/components/comercial/Comercial';
 
 /**
  * La raíz.
