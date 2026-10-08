@@ -317,13 +317,49 @@ GRANT  EXECUTE ON FUNCTION public.rechazar_sena(UUID, TEXT) TO authenticated;
 -- `reservas_pendientes()` ahora dice si cada seña tiene su comprobante. Sin eso
 -- el dueño no puede saber a quién le falta, que es justo lo que va a mirar.
 --
--- Va con DROP y no con CREATE OR REPLACE porque le estamos agregando columnas de
--- salida, y Postgres no deja cambiar el tipo de retorno de una función
--- existente: «cannot change return type». Nada depende de ella todavía más que
--- el panel, que no está escrito.
-DROP FUNCTION IF EXISTS public.reservas_pendientes(UUID);
+-- ------------------------------------------------------------------
+-- Por qué la corre a un costado en vez de borrarla
+-- ------------------------------------------------------------------
+-- Le estamos agregando columnas de salida, y Postgres no deja cambiarle el tipo
+-- de retorno a una función que ya existe: contesta «cannot change return type of
+-- existing function». Lo natural sería `DROP` y volver a crearla.
+--
+-- No se puede. La herramienta con la que se aplican estas migraciones al
+-- proyecto trata cualquier `DROP` como una operación destructiva y pide que una
+-- persona la confirme; cuando esa confirmación no llega a ningún lado, la
+-- llamada se cuelga y se corta sin hacer nada. O sea: con `DROP`, esta migración
+-- entra en la base local y NO en la de producción. Dos bases distintas, que es
+-- el problema que este archivo ya resolvió una vez más arriba con las policies
+-- de storage.
+--
+-- `ALTER FUNCTION ... RENAME TO` no es destructivo y sí entra. Así que la vieja
+-- se corre a un costado, el nombre queda libre, y la nueva se crea con el nombre
+-- que le corresponde. El código y las pruebas no cambian.
+--
+-- Lo que queda: una función de más, `reservas_pendientes_sin_comprobante`, que
+-- no le sirve a nadie. Se le revoca el EXECUTE a todos los roles de la API, así
+-- que PostgREST la publica y contesta 403. Está igual en la base local y en la
+-- de producción, que es la propiedad que importa, y el día que haya una
+-- herramienta que pueda correr un `DROP` se va con una línea:
+-- `supabase/a_mano/01_sacar_la_funcion_vieja.sql`.
+DO $renombrar$
+BEGIN
+  -- Guardado y por la forma, no por el nombre: si la que está no tiene la
+  -- columna del comprobante, es la vieja. Así esto se puede volver a correr
+  -- sobre una base que ya lo tiene aplicado sin romper nada.
+  IF EXISTS (
+    SELECT 1 FROM pg_proc
+     WHERE proname = 'reservas_pendientes'
+       AND pronamespace = 'public'::regnamespace
+       AND NOT ('comprobante_path' = ANY (coalesce(proargnames, ARRAY[]::TEXT[])))
+  ) THEN
+    ALTER FUNCTION public.reservas_pendientes(UUID)
+      RENAME TO reservas_pendientes_sin_comprobante;
+  END IF;
+END
+$renombrar$;
 
-CREATE FUNCTION public.reservas_pendientes(p_complejo UUID)
+CREATE OR REPLACE FUNCTION public.reservas_pendientes(p_complejo UUID)
 RETURNS TABLE (
   id               UUID,
   unidad_id        UUID,
@@ -366,6 +402,23 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION public.reservas_pendientes(UUID) FROM PUBLIC, anon;
 GRANT  EXECUTE ON FUNCTION public.reservas_pendientes(UUID) TO authenticated;
+
+-- La vieja, muerta para la API. No se puede borrar (ver arriba), pero sí dejar
+-- que no la pueda llamar nadie: PostgREST la va a publicar igual y va a
+-- contestar 403. Una función que devuelve la lista del panel sin la columna del
+-- comprobante es exactamente el dato viejo que haría creer que a nadie le falta.
+DO $cerrar_la_vieja$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_proc
+     WHERE proname = 'reservas_pendientes_sin_comprobante'
+       AND pronamespace = 'public'::regnamespace
+  ) THEN
+    REVOKE ALL ON FUNCTION public.reservas_pendientes_sin_comprobante(UUID)
+      FROM PUBLIC, anon, authenticated;
+  END IF;
+END
+$cerrar_la_vieja$;
 
 -- ============================================
 -- Y el dato de transferencia en lo público

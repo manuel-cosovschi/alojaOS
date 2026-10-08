@@ -11,10 +11,15 @@ no llega a ningún lado, así que la llamada se queda esperando y se corta a los
 función que no existe: también se cuelga. No es la base: no hay nada bloqueado
 ni esperando un lock, el `DROP` nunca llega.
 
-**Qué hacer:** abrir el proyecto en Supabase → **SQL Editor**, pegar el
-contenido del archivo que corresponda, y correrlo.
+**Qué hay acá hoy:** nada que bloquee. Lo único es
+`01_sacar_la_funcion_vieja.sql`, que es limpieza: borra una función que quedó
+corrida a un costado y que no puede llamar nadie. El sistema anda igual sin
+correrlo, y `verificar-produccion.sql` da todo `ok` con o sin él.
 
-**Cómo saber si hacía falta y si funcionó:** correr
-`scripts/verificar-produccion.sql` en el mismo SQL Editor. Dice fila por fila
-si la base de producción es la que describe el repo. Antes de pegar esto, la
-fila 59 dice `FALTA`. Después tiene que decir `ok`, y todas las demás también.
+**Qué hacer, si algún día querés:** abrir el proyecto en Supabase → **SQL
+Editor**, pegar el contenido, y correrlo. O correrlo con el CLI de Supabase, que
+tiene la contraseña de la base y no pasa por el conector.
+
+**Cómo saber si la base de producción está completa:** correr
+`scripts/verificar-produccion.sql` en el mismo SQL Editor. Dice fila por fila si
+la base es la que describe el repo. Tienen que dar todas `ok`.

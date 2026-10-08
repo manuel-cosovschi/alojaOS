@@ -106,11 +106,23 @@ WITH esperado(orden, que, existe) AS (
           SELECT jsonb_object_keys(public.estado_reserva('00000000-0000-0000-0000-000000000000'))))),
 
   -- La que el panel va a usar para saber a quién le falta el comprobante.
-  -- 14 columnas de salida + 1 de entrada = 15 argumentos en el catálogo.
   (59, 'reservas_pendientes() incluye el comprobante',
        (SELECT count(*) = 1 FROM pg_proc
          WHERE proname='reservas_pendientes' AND pronamespace='public'::regnamespace
            AND 'comprobante_path' = ANY (proargnames))),
+
+  -- La versión vieja quedó corrida a un costado porque no se la puede borrar
+  -- desde el conector (ver el comentario en 011). Las dos situaciones son
+  -- correctas y esta fila acepta las dos: o no está, o está y no la puede
+  -- llamar nadie. Lo que NO es correcto es que esté y sea alcanzable: devuelve
+  -- la lista del panel sin la columna del comprobante, o sea el dato viejo que
+  -- haría creer que a nadie le falta.
+  (60, 'la reservas_pendientes vieja no está, o no la puede llamar nadie',
+       (SELECT count(*) = 0 FROM pg_proc p
+         WHERE p.proname='reservas_pendientes_sin_comprobante'
+           AND p.pronamespace='public'::regnamespace
+           AND (has_function_privilege('anon', p.oid, 'EXECUTE')
+             OR has_function_privilege('authenticated', p.oid, 'EXECUTE')))),
 
   -- --- Los permisos: que no mientan ---------------------------------------
   -- Esto ya falló una vez: una migración revocaba "de PUBLIC" y Supabase le

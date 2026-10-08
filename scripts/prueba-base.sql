@@ -684,6 +684,50 @@ BEGIN
     NOT has_function_privilege('authenticated', 'public.liberar_vencidas(uuid)', 'EXECUTE'));
 END $$;
 
+-- La `reservas_pendientes` vieja: corrida a un costado y muerta para la API.
+--
+-- La 011 le agregó columnas de salida, y como Postgres no deja cambiarle el tipo
+-- de retorno a una función existente, la vieja se renombró en vez de borrarse
+-- (el conector con el que se aplica a producción no puede correr un `DROP`).
+--
+-- Acá se comprueba lo que esa maniobra tiene que dejar, y es importante que sea
+-- en la base local: es la única corrida donde las migraciones se aplican de cero
+-- y se puede ver que el renombre pasó de verdad, y no que la fila está en verde
+-- porque la función no existe.
+DO $$
+DECLARE
+  v_existe BOOLEAN;
+  v_alcanzable BOOLEAN;
+  v_nueva_ok BOOLEAN;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1 FROM pg_proc
+     WHERE proname = 'reservas_pendientes_sin_comprobante'
+       AND pronamespace = 'public'::regnamespace
+  ) INTO v_existe;
+  PERFORM pg_temp.verificar('la reservas_pendientes vieja quedó corrida a un costado',
+    v_existe);
+
+  SELECT EXISTS (
+    SELECT 1 FROM pg_proc p
+     WHERE p.proname = 'reservas_pendientes_sin_comprobante'
+       AND p.pronamespace = 'public'::regnamespace
+       AND (has_function_privilege('anon', p.oid, 'EXECUTE')
+         OR has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+  ) INTO v_alcanzable;
+  PERFORM pg_temp.verificar('y no la puede llamar nadie por la API',
+    NOT v_alcanzable);
+
+  -- Y que el renombre dejó el nombre bueno con la función buena: si el nombre
+  -- quedó libre y la nueva no se creó, lo de arriba pasa igual y el panel se
+  -- queda sin la función que usa.
+  SELECT 'comprobante_path' = ANY (proargnames) INTO v_nueva_ok
+    FROM pg_proc WHERE proname = 'reservas_pendientes'
+     AND pronamespace = 'public'::regnamespace;
+  PERFORM pg_temp.verificar('y reservas_pendientes() quedó con el comprobante',
+    coalesce(v_nueva_ok, false));
+END $$;
+
 -- Ninguna función del proyecto sin `search_path` fijo: sin eso, resuelve los
 -- nombres con el del invocador.
 DO $$

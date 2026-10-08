@@ -36,7 +36,7 @@ sistema lo tiene**. Falta el panel del dueño, los mails y la venta del producto
 | **Subir el comprobante de la seña, y comprobar que llegó** | El vencimiento programado (hoy corre al leer y al escribir) |
 | Cotización por noche, cruzando temporadas | Un despliegue (no hay proyecto de Vercel todavía) |
 | Reglas del calendario y días de entrada | |
-| 99 pruebas de la base, 110 de las reglas, 29 de navegador | |
+| 102 pruebas de la base, 110 de las reglas, 29 de navegador | |
 
 El dueño ya puede aprobar o rechazar una seña: las funciones están y probadas
 (`aprobar_sena`, `rechazar_sena`). Lo que falta es la pantalla, que necesita
@@ -235,8 +235,7 @@ perdió**, porque vivía fuera del repositorio.
 ### Contra el proyecto de Supabase
 
 El proyecto de AlojaOS existe: `alojaos`, en `sa-east-1`, con las 12 migraciones
-aplicadas menos un pedazo, que está en `supabase/a_mano/` y se pega a mano (ver
-más abajo). La URL y la clave pública se sacan del dashboard (Project Settings →
+aplicadas y `verificar-produccion.sql` dando 43 de 43. La URL y la clave pública se sacan del dashboard (Project Settings →
 API) y van a `.env.local`; no están en el repositorio, aunque la clave pública
 viaje igual en el navegador.
 
@@ -297,7 +296,7 @@ escrita contesta `FALTA` sobre algo que está, y manda a arreglar lo que no est�
 roto.
 
 En su primera corrida contra el proyecto de verdad encontró algo que diez
-migraciones y 94 pruebas no habían visto: tres funciones de trigger con
+migraciones y 99 pruebas no habían visto: tres funciones de trigger con
 `EXECUTE` concedido a `PUBLIC`, o sea ejecutables por `anon`.
 
 No es un agujero —una función que devuelve `trigger` no se puede llamar desde
@@ -307,24 +306,36 @@ igual (migración 012), por un motivo que sí importa: la prueba local que mira
 mano**, y esas tres no estaban en la lista. Una prueba así comprueba la memoria
 de quien la escribió, no la base. Ahora las dos enumeran todo `public`.
 
-### Lo que no se puede aplicar desde acá
+### El conector no puede correr un `DROP`
 
-`supabase/a_mano/01_reservas_pendientes.sql` hay que pegarlo en el SQL Editor.
+El conector de Supabase trata cualquier `DROP` como destructivo y pide que una
+persona lo confirme. Cuando esa confirmación no llega a ningún lado, la llamada
+se queda esperando y se corta a los 60 segundos **sin hacer nada**: ni a medias,
+nada. Comprobado con un `DROP FUNCTION IF EXISTS` de una función inexistente, que
+también se cuelga, y con `pg_stat_activity`, que no muestra nada corriendo ni
+esperando un lock mientras pasa. La sentencia no llega a la base.
 
-El motivo no es del esquema: el conector de Supabase trata cualquier `DROP` como
-destructivo y pide que una persona lo confirme, y esa confirmación no llega a
-ningún lado en una sesión sin interfaz. La llamada se queda esperando y se corta
-a los 60 segundos **sin hacer nada**. Lo comprobé con un `DROP FUNCTION IF
-EXISTS` de una función inexistente: también se cuelga, y mientras tanto la base
-no tiene nada bloqueado ni esperando un lock.
+Eso complicaba una sola cosa: `reservas_pendientes()` necesitaba dos columnas de
+salida más, y Postgres no deja cambiarle el tipo de retorno a una función
+existente («cannot change return type of existing function»). El camino normal
+es `DROP` y volver a crearla.
 
-Lo que queda pendiente es una sola función, `reservas_pendientes()`, que necesita
-dos columnas de salida más y por eso va con `DROP` (Postgres no deja cambiar el
-tipo de retorno de una función existente). Hoy nada la llama: la usaría el panel
-del dueño, que no está escrito.
+La 011 hace otra cosa: la corre a un costado con `ALTER FUNCTION ... RENAME TO`,
+que no es destructivo y sí entra, y crea la nueva con el nombre que corresponde.
+El código y las pruebas no cambian.
 
-Después de pegarlo, `verificar-produccion.sql` tiene que pasar la fila 59 de
-`FALTA` a `ok`.
+Lo que queda es una función de más, `reservas_pendientes_sin_comprobante`, con el
+`EXECUTE` revocado de `anon` y de `authenticated`: PostgREST la publica y
+contesta 403. Está igual en la base local y en la de producción, que es la
+propiedad que importa. `supabase/a_mano/01_sacar_la_funcion_vieja.sql` la borra
+el día que haya una herramienta que pueda; no bloquea nada y el verificador da
+todo `ok` con o sin ella.
+
+El renombre está probado donde se puede ver que pasó de verdad: en la base
+local, que es la única que aplica las migraciones de cero. Tres aserciones —que
+la vieja quedó a un costado, que no la puede llamar nadie, y que el nombre bueno
+quedó con la función buena—, porque si el renombre dejara el nombre libre y la
+nueva no se creara, las dos primeras pasarían igual.
 
 ---
 
