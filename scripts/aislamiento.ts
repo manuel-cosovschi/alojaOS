@@ -57,6 +57,40 @@ if (!URL_BASE || !ANON) {
 
 const CABECERAS = { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json' };
 
+// La clave de servicio es opcional: sin ella se corre la mitad de arriba, que
+// es la que importa. Con ella se puede comprobar la otra mitad, que es casi
+// igual de importante y nadie mira: que el servidor SÍ pueda hacer lo que el
+// producto necesita. Un REVOKE de más deja al visitante bien aislado y al
+// sistema sin poder guardar un comprobante.
+const SERVICIO =
+  process.env.SUPABASE_SERVICE_ROLE_KEY || delEnv('SUPABASE_SERVICE_ROLE_KEY') || '';
+
+const CABECERAS_SERVICIO = {
+  apikey: SERVICIO,
+  Authorization: `Bearer ${SERVICIO}`,
+  'Content-Type': 'application/json',
+};
+
+/**
+ * Un JPEG de 1x1, entero y válido.
+ *
+ * Tiene que ser un archivo real del tipo que el bucket acepta: con cualquier
+ * otra cosa la subida rebota por el tipo y la prueba no distingue "no tengo
+ * permiso" de "no me gusta el archivo".
+ */
+const JPEG_MINIMO = Uint8Array.from(
+  atob(
+    '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' +
+      'HBwcJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPDI0NP/AABEIAAEAAQMBIgACEQEDEQH/xAAfAAAB' +
+      'BQEBAQEBAQAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFB' +
+      'BhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RV' +
+      'VldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrC' +
+      'w8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/aAAwDAQACEQMRAD8A/v4oooA/' +
+      '/9k='
+  ),
+  (c) => c.charCodeAt(0)
+);
+
 let fallas = 0;
 
 function ok(nombre: string, detalle = '') {
@@ -67,8 +101,11 @@ function falla(nombre: string, detalle: string) {
   console.log(`FALLA  ${nombre}\n       ${detalle}`);
 }
 
-async function rest(path: string, init?: RequestInit) {
-  const res = await fetch(`${URL_BASE}/rest/v1/${path}`, { ...init, headers: CABECERAS });
+async function rest(path: string, init?: RequestInit, comoServicio = false) {
+  const res = await fetch(`${URL_BASE}/rest/v1/${path}`, {
+    ...init,
+    headers: comoServicio ? CABECERAS_SERVICIO : CABECERAS,
+  });
   let cuerpo: unknown = null;
   try {
     cuerpo = await res.json();
@@ -185,9 +222,126 @@ async function main() {
     else falla('puede consultar las noches ocupadas', `HTTP ${status}`);
   }
 
+  // ------------------------------------------------------------------
+  // El otro lado: que el servidor sí pueda
+  // ------------------------------------------------------------------
+  if (!SERVICIO) {
+    console.log(
+      '\n— La clave de servicio —\n' +
+        'No está cargada (SUPABASE_SERVICE_ROLE_KEY), así que no comprobé lo del\n' +
+        'servidor: registrar un comprobante y escribir en el bucket privado. Eso\n' +
+        'queda sin verificar, no verificado y bien.'
+    );
+  } else {
+    console.log('\n— La clave de servicio, que es la otra mitad —');
+
+    // Una clave de servicio que no pasa por encima de RLS se nota acá y en
+    // ningún otro lado: la página sigue andando, y los comprobantes no se
+    // guardan. Es el bug del sistema anterior, con otra causa.
+    {
+      const { status, cuerpo } = await rest('complejos?select=id&limit=1', undefined, true);
+      if (status === 200 && Array.isArray(cuerpo)) ok('el servidor lee `complejos` (pasa por encima de RLS)');
+      else falla('el servidor lee `complejos`', `HTTP ${status}: ${JSON.stringify(cuerpo).slice(0, 200)}`);
+    }
+
+    // La función que escribe la ruta del comprobante. Con un id inexistente
+    // tiene que contestar `no_existe`: eso prueba que ENTRÓ a la función, que
+    // es lo que se está comprobando. Un 401 o un 403 serían una clave que no
+    // sirve, y el huésped vería "no pudimos guardarlo" para siempre.
+    {
+      const { status, cuerpo } = await rest(
+        'rpc/registrar_comprobante',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            p_reserva: '00000000-0000-0000-0000-000000000000',
+            p_path: 'aislamiento/prueba.jpg',
+          }),
+        },
+        true
+      );
+      const motivo = (cuerpo as { motivo?: string } | null)?.motivo;
+      if (status === 200 && motivo === 'no_existe') {
+        ok('el servidor puede llamar registrar_comprobante()', 'contestó no_existe, que es entrar');
+      } else {
+        falla(
+          'el servidor puede llamar registrar_comprobante()',
+          `HTTP ${status}: ${JSON.stringify(cuerpo).slice(0, 200)}`
+        );
+      }
+    }
+
+    // El almacenamiento. El bucket es privado y no tiene ninguna policy, así
+    // que el único que puede escribirlo es éste. Si no pudiera, ningún
+    // comprobante se guardaría nunca —exactamente lo que pasó antes—.
+    {
+      // Un JPEG de verdad, del tipo que el bucket acepta. Con un .txt la
+      // subida rebota por el tipo y no se prueba nada: la respuesta sería la
+      // misma con una clave que no sirve. Hay que subir algo que TIENE que
+      // entrar, y que entre.
+      const ruta = `aislamiento/${Date.now()}.jpg`;
+      const subida = await fetch(`${URL_BASE}/storage/v1/object/comprobantes/${ruta}`, {
+        method: 'POST',
+        headers: { apikey: SERVICIO, Authorization: `Bearer ${SERVICIO}`, 'Content-Type': 'image/jpeg' },
+        body: JPEG_MINIMO,
+      });
+
+      if (!subida.ok) {
+        falla(
+          'el servidor escribe el bucket privado',
+          `HTTP ${subida.status}: ${(await subida.text()).slice(0, 200)}`
+        );
+      } else {
+        // Y que esté: el 200 de la subida es lo que contestó el servicio, no
+        // una comprobación de que el archivo quedó. Se lo vuelve a pedir.
+        const bajada = await fetch(`${URL_BASE}/storage/v1/object/comprobantes/${ruta}`, {
+          headers: { apikey: SERVICIO, Authorization: `Bearer ${SERVICIO}` },
+        });
+        const bytes = new Uint8Array(await bajada.arrayBuffer());
+        const igual =
+          bajada.ok && bytes.length === JPEG_MINIMO.length && bytes.every((b, i) => b === JPEG_MINIMO[i]);
+        if (igual) ok('el servidor escribe el bucket privado, y el archivo queda', ruta);
+        else falla('el archivo que subió el servidor se puede volver a leer',
+                   `HTTP ${bajada.status}, ${bytes.length} bytes de ${JPEG_MINIMO.length}`);
+
+        await fetch(`${URL_BASE}/storage/v1/object/comprobantes/${ruta}`, {
+          method: 'DELETE',
+          headers: { apikey: SERVICIO, Authorization: `Bearer ${SERVICIO}` },
+        });
+      }
+    }
+
+    // Y el visitante no. Mismo endpoint, mismo archivo, otra clave: así lo
+    // único que cambia es el permiso.
+    //
+    // Y se mira el MOTIVO, no sólo el código. Un 400 puede ser por el tipo del
+    // archivo, por el tamaño o por el permiso, y si fuera por el tipo esta
+    // prueba estaría pasando por la razón equivocada: diría que el visitante
+    // no puede escribir cuando en realidad no probó el permiso.
+    {
+      const subida = await fetch(`${URL_BASE}/storage/v1/object/comprobantes/colado.jpg`, {
+        method: 'POST',
+        headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'image/jpeg' },
+        body: JPEG_MINIMO,
+      });
+      const cuerpo = await subida.text();
+
+      if (subida.ok) {
+        falla('el visitante NO puede escribir el bucket', `HTTP ${subida.status}: entró`);
+      } else if (/unauthorized|not authorized|row-level security|violates|permission|signature|jwt/i.test(cuerpo)) {
+        ok('el visitante no puede escribir el bucket', `HTTP ${subida.status}, por permiso`);
+      } else {
+        falla(
+          'el visitante no puede escribir el bucket POR PERMISO',
+          `rebotó con HTTP ${subida.status} pero por otro motivo: ${cuerpo.slice(0, 200)}`
+        );
+      }
+    }
+  }
+
   console.log(
     fallas === 0
-      ? '\n✓ El visitante ve sólo lo público.\n'
+      ? '\n✓ El visitante ve sólo lo público, y el servidor puede lo que tiene que poder.\n'
       : `\n✗ ${fallas} ${fallas === 1 ? 'problema' : 'problemas'} de aislamiento.\n`
   );
   process.exit(fallas === 0 ? 0 : 1);

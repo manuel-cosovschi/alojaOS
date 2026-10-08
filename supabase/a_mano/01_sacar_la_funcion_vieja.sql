@@ -1,0 +1,23 @@
+-- ============================================
+-- Sacar `reservas_pendientes_sin_comprobante`
+-- ============================================
+-- Esto es limpieza, no es un pendiente que bloquee nada. El sistema anda igual
+-- con esta función ahí: no la llama nadie y tiene el EXECUTE revocado de todos
+-- los roles de la API, así que PostgREST la publica y contesta 403.
+--
+-- De dónde salió: la migración 011 le agregó dos columnas de salida a
+-- `reservas_pendientes()`. Postgres no deja cambiarle el tipo de retorno a una
+-- función existente, y la herramienta con la que aplico las migraciones no puede
+-- correr un `DROP` (ver `supabase/a_mano/README.md`). Así que la vieja se corrió
+-- a un costado con `ALTER FUNCTION ... RENAME TO`, que sí entra, y el nombre
+-- quedó libre para la nueva.
+--
+-- Cuándo correr esto: cuando haya una herramienta que pueda ejecutar un `DROP`
+-- contra el proyecto —el CLI de Supabase con la contraseña de la base, o el SQL
+-- Editor del panel—. No hay apuro.
+--
+-- Después de correrlo, `scripts/verificar-produccion.sql` sigue dando todo `ok`:
+-- la fila que mira esta función comprueba que **o no está, o no la puede llamar
+-- nadie**, porque las dos cosas son correctas.
+
+DROP FUNCTION IF EXISTS public.reservas_pendientes_sin_comprobante(UUID);

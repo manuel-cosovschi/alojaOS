@@ -43,3 +43,44 @@ export const SLUGS_RESERVADOS = [
 export function slugReservado(slug: string): boolean {
   return (SLUGS_RESERVADOS as readonly string[]).includes(slug) || slug.startsWith('demo-');
 }
+
+// ---------------------------------------------------------------------------
+// Por dónde nos escribe un cliente
+// ---------------------------------------------------------------------------
+// Acá y no en la página comercial, porque el mismo dato va en varios lugares y
+// el día que cambie el número tiene que cambiar en uno.
+//
+// Salen de variables de entorno: el producto se puede revender, y quien lo
+// revenda pone su número sin tocar el código.
+//
+// El valor por defecto es un número INVENTADO y se llama así a propósito. Antes
+// era uno que parecía real, y el resultado fue que la página salió a producción
+// con el botón principal —el único llamado a la acción de toda la página de
+// venta— apuntando a un número que no es de nadie. Nada falló: el enlace
+// existía, el botón andaba, y el que lo apretaba no llegaba a ninguna parte.
+//
+// Es el mismo error que persigue todo este proyecto, en la página de venta:
+// algo que contesta que está bien sin estarlo. Un número que se lee
+// «00000000000» no se le escapa a nadie, y `npm run prueba:comercial` falla si
+// llega a producción.
+export const WHATSAPP_SIN_CARGAR = '00000000000';
+
+export const WHATSAPP_CONTACTO =
+  process.env.NEXT_PUBLIC_WHATSAPP_CONTACTO || WHATSAPP_SIN_CARGAR;
+
+export const MAIL_SIN_CARGAR = 'sin-cargar@ejemplo.invalid';
+
+export const MAIL_CONTACTO =
+  process.env.NEXT_PUBLIC_MAIL_CONTACTO || MAIL_SIN_CARGAR;
+
+/**
+ * El enlace de WhatsApp, con un mensaje puesto.
+ *
+ * El mensaje pre-escrito no es para ahorrarle tipeo a nadie: es para que quien
+ * atiende sepa de dónde viene la persona sin preguntar. Alguien que escribe
+ * desde la página comercial tiene una conversación distinta de alguien que
+ * escribe desde la página de un complejo.
+ */
+export const ENLACE_WHATSAPP = `https://wa.me/${WHATSAPP_CONTACTO}?text=${encodeURIComponent(
+  'Hola, vi AlojaOS y quiero saber más.'
+)}`;

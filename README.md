@@ -24,18 +24,38 @@ AlojaOS es un producto de **SOVARE**.
 
 ## Estado
 
-Está construida la base: el esquema, las reglas del negocio y las pruebas que
-las verifican. Todavía **no hay aplicación**: ni página de reservas, ni panel,
-ni página comercial, ni alta de clientes.
+El sistema anda de punta a punta y está desplegado en
+**https://alojaos.vercel.app**: el huésped elige unidad y noches, ve el precio,
+deja la seña, sube el comprobante y **ve que el sistema lo tiene**; el dueño
+entra al panel y la confirma o la rechaza.
+
+Falta lo de afuera: el dominio y la clave del proveedor de mail.
 
 | Listo | Falta |
 |---|---|
-| Esquema multi-inquilino con RLS | La página pública de reservas |
-| La restricción que impide la doble reserva | El panel del dueño |
-| Cotización por noche | Los comprobantes de seña y su aprobación |
-| Reglas del calendario | Los mails |
-| Temporadas configurables | La página comercial y el alta |
-| 57 pruebas de la base + 87 de las reglas | El vencimiento programado de las señas |
+| Esquema multi-inquilino con RLS, probado con dos dueños | El dominio `alojaos.shop` (está libre, hay que registrarlo) |
+| La restricción que impide la doble reserva | La clave de Resend, para que los mails salgan |
+| **La página pública de reservas** | El alta de clientes desde el panel |
+| **Subir el comprobante de la seña, y comprobar que llegó** | Editar precios y calendario desde el panel |
+| **El panel del dueño: ver, confirmar y rechazar señas** | |
+| **El vencimiento corre solo, y el panel dice si no** | |
+| **La página comercial** | |
+| **Los avisos por mail, y el registro de los que no salieron** | |
+| **Desplegado y probado contra el despliegue** | |
+| Cotización por noche, cruzando temporadas | |
+| Reglas del calendario y días de entrada | |
+
+Los mails están escritos y conectados; lo que falta es la clave del proveedor.
+Mientras no esté, **no se pierde nada en silencio**: cada reserva deja un aviso
+en estado `SIN_CONFIGURAR` y el panel le muestra al dueño a qué huésped tiene
+que escribirle él.
+
+Las **páginas de los complejos** son lo único que el despliegue todavía no
+sirve, y el motivo es el dominio: cada complejo vive en
+`sucomplejo.alojaos.shop` y `vercel.app` no admite comodín. El panel, el login y
+la página comercial andan; `tucomplejo.alojaos.vercel.app` no resuelve y no
+puede resolver. Hasta que el dominio esté, las páginas de reservas se prueban en
+local (`npm run dev:local` o `next start` con `NEXT_PUBLIC_ROOT_DOMAIN`).
 
 ---
 
@@ -166,6 +186,29 @@ Lo que se hace distinto acá:
 
 ---
 
+## La página de reservas
+
+Cada complejo atiende en `sucomplejo.alojaos.shop`. El subdominio es lo único
+que decide qué datos se leen, así que es una decisión de seguridad: el
+middleware **borra** la cabecera `x-complejo` que llegue de afuera antes de
+escribir la suya, y un subdominio sirve sólo su página pública — el panel, el
+login y la página comercial se van al dominio principal, así que la sesión del
+dueño nunca queda atada a un subdominio.
+
+La marca del complejo llega al navegador como variables CSS que la página
+escribe desde su fila de `complejos`. En el sistema anterior la paleta estaba
+repetida inline en cinco archivos HTML.
+
+El calendario muestra qué noches están tomadas, respeta que el día de salida de
+una reserva sea día de entrada para la siguiente, y deshabilita los días de
+entrada que el complejo no permite en ese tramo. Nada de eso es la garantía:
+`crear_reserva()` vuelve a validar todo antes de escribir, y el importe que se
+guarda lo calcula la base. En el sistema anterior el alta guardaba el importe
+que mandaba la página, y un importe que llega del navegador es un dato del
+cliente.
+
+---
+
 ## Correrlo
 
 ```bash
@@ -178,26 +221,235 @@ npm run db:test # las migraciones y la base, contra un Postgres de verdad
 (`postgresql-contrib`). Levanta un cluster al momento, aplica las migraciones,
 corre las pruebas y lo tira. No toca ningún Supabase.
 
-Contra un proyecto de Supabase:
+Todo lo que hay para correr, y qué contesta cada cosa:
+
+| Qué | Cuántas | Contra qué |
+|---|---|---|
+| `npm run db:test` — migraciones, reglas, permisos, dos escrituras simultáneas | 108 | un Postgres al momento |
+| `npm test` — fechas, precios, calendario, temporadas, subdominios, marca | 110 | nada, es puro código |
+| `npm run prueba:navegador` — el flujo del huésped, en Chromium | 33 | el sitio levantado |
+| `npm run prueba:panel` — el flujo del dueño, en Chromium | 23 | el sitio + Supabase |
+| `npm run prueba:duenos` — dos dueños logueados, aislamiento real | 18 | Supabase |
+| `npm run aislamiento` — qué puede un visitante, y qué el servidor | 25 | Supabase |
+| `npm run prueba:clave-rota` — que el panel avise si no puede guardar comprobantes | 2 | el sitio, con una clave inventada |
+| `npm run prueba:despliegue` — el sitio desplegado, en Chromium | 12 | el despliegue |
+| `scripts/verificar-produccion.sql` — si la base de producción es la del repo | 54 | Supabase |
+
+Las que piden Supabase necesitan `.env.local` y el complejo de ejemplo sembrado
+(`npx tsx scripts/sembrar-demo.mts`). Las dos primeras corren en cualquier
+máquina sin tocar nada de nadie.
+
+### Por qué hay una batería contra el despliegue
+
+Porque hay cosas que sólo pueden fallar allá, y en local andan perfecto:
+
+  - las cookies de sesión son `Secure` y el middleware corre en el edge, no en
+    Node. Si la sesión se rompiera por eso, el panel andaría acá y mandaría al
+    login en producción;
+  - las variables de entorno las puso Vercel. Una que falte no se nota en local;
+  - y el despliegue puede quedar detrás de la protección de Vercel, que contesta
+    un 302 al login de Vercel. Para un huésped eso es una pared, y es la clase
+    de cosa que se descubre cuando un cliente avisa que su página no abre. Pasó
+    acá: los proyectos nuevos vienen con la protección puesta para todo, y hubo
+    que dejarla sólo para preview.
+
+Un build que compila no es una función que anda.
+
+### Tocar el producto sin tener Supabase
 
 ```bash
-cp .env.example .env.local   # completá URL y claves
-npm run db:migrate
-npm run aislamiento
+npm run dev:local   # Postgres + PostgREST + un complejo de ejemplo
+npm run build && npm start
+npm run prueba:navegador
 ```
+
+`dev:local` levanta Postgres, le aplica las migraciones, carga un complejo
+inventado y pone adelante **PostgREST**, que es la misma capa REST que usa
+Supabase. Escribe `.env.local` apuntando ahí. Con eso el camino completo —el
+navegador pide, PostgREST ejecuta, la base decide— se prueba en cualquier
+máquina sin tocar la cuenta de nadie.
+
+Lo que no cubre es Auth: el panel del dueño necesita sesiones de verdad y eso
+lo da Supabase. Sirve para todo lo público, que es lo que ve el huésped.
+
+`prueba:navegador` corre el flujo en un Chromium de verdad: que las noches
+tomadas se vean tomadas, que el mínimo y el día de entrada se expliquen antes
+del formulario, que una estadía que cruza de temporada se cobre a dos precios,
+que una unidad sin tarifa lo diga, que reservar escriba la reserva — y que la
+página no publique el nombre ni el teléfono de ningún huésped.
+
+Esta batería existe por un motivo concreto: el sistema anterior tenía una y **se
+perdió**, porque vivía fuera del repositorio.
+
+### Contra el proyecto de Supabase
+
+El proyecto de AlojaOS existe: `alojaos`, en `sa-east-1`, con las 13 migraciones
+aplicadas y `verificar-produccion.sql` dando 47 de 47. La URL y las claves se
+sacan del dashboard (Project Settings → API Keys) y van a `.env.local`; no están
+en el repositorio.
+
+```bash
+cp .env.example .env.local        # URL, clave publicable y clave de servicio
+npx tsx scripts/sembrar-demo.mts  # los dos dueños de ejemplo
+npm run aislamiento               # qué puede un visitante, y qué el servidor
+npm run build && npm start
+
+ALOJAOS_SUBIDA_ANDA=1 npm run prueba:navegador   # el huésped, con el comprobante
+npm run prueba:panel                             # el dueño
+npm run prueba:duenos                            # dos dueños, aislamiento real
+```
+
+`sembrar-demo.mts` crea los dos usuarios por la API de Auth y deja sus
+contraseñas en `.alojaos-demo.json` (0600, ignorado por git). El SQL del
+complejo está en `scripts/ejemplo.sql` y el del vecino en
+`scripts/ejemplo-vecino.sql`; los dos piden el id del dueño en un ajuste de
+sesión, que el script imprime.
+
+Hay **dos** claves y hacen cosas distintas. La publicable viaja en el navegador
+de cualquiera y está bien que viaje: lo que puede hacer lo decide RLS. La de
+servicio saltea RLS entera, y la necesitan dos cosas: guardar el comprobante
+—el huésped no tiene cuenta, así que no puede escribir el bucket él mismo— y
+firmar la URL con la que el dueño lo mira. Nunca en una variable `NEXT_PUBLIC_`.
+
+Ojo: `npm run dev:local` **sobreescribe** `.env.local` apuntando al Postgres de
+al lado. Si venías trabajando contra Supabase, guardate una copia.
+
+### Dos dueños, que es la prueba que decide si esto se vende
+
+`npm run aislamiento` comprueba qué puede un visitante sin cuenta. No cubre el
+caso que importa en un multi-inquilino: **un cliente pago, logueado, con un token
+válido, pidiendo los datos del otro.**
+
+`npm run prueba:duenos` entra con dos contraseñas de verdad y pide lo ajeno por
+los tres caminos que existen, porque cada uno se cierra distinto y cerrar dos de
+tres no sirve:
+
+| Camino | Qué lo protege |
+|---|---|
+| Las tablas por REST | RLS, con `es_miembro()` en la policy |
+| Las funciones del panel | el `es_miembro()` de adentro — son SECURITY DEFINER, RLS no las frena |
+| Escribir: aprobar y rechazar la seña de otro | lo mismo, y es lo que convierte una filtración en un daño |
+
+Y pide con el **id real** de la reserva del vecino, no con uno inventado: un id
+inexistente contesta «no existe» por el motivo equivocado y la prueba pasaría
+sin haber probado nada.
+
+La última sección prueba lo contrario, y sin ella las 14 anteriores no valen:
+que cada dueño **sí** vea lo suyo. Una policy que no deja ver nada pasa todas las
+pruebas de filtración.
+
+Esto no se puede comprobar leyendo las policies. `es_miembro(complejo_id)` se lee
+bien; también se leería bien con un `OR true` que alguien dejó probando algo.
+
+### Lo que apareció al aplicarlo en Supabase de verdad
+
+Las nueve primeras migraciones pasaban la prueba local y en Supabase dejaron tres
+cosas mal. La tercera es la que importa:
+
+| Qué | Por qué no se había visto |
+|---|---|
+| Dos funciones de trigger sin `search_path` fijo | Olvido; el linter de Supabase lo marca y tenía razón |
+| `btree_gist` en `public`, el esquema que se expone como API | Nadie lo mira hasta que alguien lo mira |
+| **`anon` podía ejecutar tres funciones que no son para él** | **El arnés local no reproducía las default privileges de Supabase sobre funciones** |
+
+La migración 008 dice que los permisos tienen que decir lo que parecen decir, y
+revocaba `EXECUTE` de `PUBLIC`. En Supabase el permiso no viene de ahí: cada
+función nace con un `GRANT` **explícito** a `anon`, y revocar de `PUBLIC` no lo
+toca. El arnés no tenía esa concesión, así que la prueba que existe para que los
+permisos no mientan estaba corriendo contra una base donde los permisos eran
+otros.
+
+Reproducir mal el entorno es peor que no probarlo: da una respuesta
+tranquilizadora y falsa. Lo arreglado: el prelude de los dos scripts locales
+ahora concede lo mismo que Supabase, `prueba-base.sql` **afirma quién puede
+ejecutar qué** leyéndolo de la base, y sin la migración 010 esas aserciones
+fallan (comprobado).
+
+El linter va a seguir marcando las cinco funciones que `anon` sí puede llamar.
+Eso es a propósito: la página de reservas no tiene sesión. Son SECURITY DEFINER
+y cada una decide adentro qué devuelve — ninguna acepta el estado ni el importe
+de una reserva, ninguna devuelve datos de un huésped, y `crear_reserva` sólo
+puede dejar una seña pendiente.
+
+### Que la base de producción SEA la del repo
+
+`prueba-base.sql` comprueba que las reglas funcionen, contra un Postgres local.
+Eso no contesta la otra pregunta, que es distinta y ya falló: **¿la base de
+producción es la que describen las migraciones?** Un esquema a medio aplicar
+contesta bien a casi todo y mal a una cosa, y esa una cosa aparece el día que un
+huésped la usa.
+
+Para eso está `scripts/verificar-produccion.sql`. Se pega en el SQL Editor del
+proyecto y contesta fila por fila. No escribe nada y no lee datos de nadie: sólo
+el catálogo.
+
+`prueba-local.sh` lo corre también contra la base local, donde tiene que dar
+`ok` en todo. Eso comprueba el verificador: uno con una firma de función mal
+escrita contesta `FALTA` sobre algo que está, y manda a arreglar lo que no está
+roto.
+
+En su primera corrida contra el proyecto de verdad encontró algo que diez
+migraciones y 99 pruebas no habían visto: tres funciones de trigger con
+`EXECUTE` concedido a `PUBLIC`, o sea ejecutables por `anon`.
+
+No es un agujero —una función que devuelve `trigger` no se puede llamar desde
+SQL, y PostgREST no publica funciones con ese tipo de retorno— pero se cerró
+igual (migración 012), por un motivo que sí importa: la prueba local que mira
+"quién puede ejecutar qué" lo hacía **sobre una lista de nombres escrita a
+mano**, y esas tres no estaban en la lista. Una prueba así comprueba la memoria
+de quien la escribió, no la base. Ahora las dos enumeran todo `public`.
+
+### El conector no puede correr un `DROP`
+
+El conector de Supabase trata cualquier `DROP` como destructivo y pide que una
+persona lo confirme. Cuando esa confirmación no llega a ningún lado, la llamada
+se queda esperando y se corta a los 60 segundos **sin hacer nada**: ni a medias,
+nada. Comprobado con un `DROP FUNCTION IF EXISTS` de una función inexistente, que
+también se cuelga, y con `pg_stat_activity`, que no muestra nada corriendo ni
+esperando un lock mientras pasa. La sentencia no llega a la base.
+
+Eso complicaba una sola cosa: `reservas_pendientes()` necesitaba dos columnas de
+salida más, y Postgres no deja cambiarle el tipo de retorno a una función
+existente («cannot change return type of existing function»). El camino normal
+es `DROP` y volver a crearla.
+
+La 011 hace otra cosa: la corre a un costado con `ALTER FUNCTION ... RENAME TO`,
+que no es destructivo y sí entra, y crea la nueva con el nombre que corresponde.
+El código y las pruebas no cambian.
+
+Lo que queda es una función de más, `reservas_pendientes_sin_comprobante`, con el
+`EXECUTE` revocado de `anon` y de `authenticated`: PostgREST la publica y
+contesta 403. Está igual en la base local y en la de producción, que es la
+propiedad que importa. `supabase/a_mano/01_sacar_la_funcion_vieja.sql` la borra
+el día que haya una herramienta que pueda; no bloquea nada y el verificador da
+todo `ok` con o sin ella.
+
+El renombre está probado donde se puede ver que pasó de verdad: en la base
+local, que es la única que aplica las migraciones de cero. Tres aserciones —que
+la vieja quedó a un costado, que no la puede llamar nadie, y que el nombre bueno
+quedó con la función buena—, porque si el renombre dejara el nombre libre y la
+nueva no se creara, las dos primeras pasarían igual.
 
 ---
 
 ## Estructura
 
 ```
-src/lib/
-├── fechas.ts        El día de Argentina, contar noches, superposición
-├── precios.ts       Cotizar: cada noche por su fecha
-├── calendario.ts    Ventana, mínimos, días de entrada, bloques enteros
-├── temporada.ts     A qué temporada pertenece una fecha
-├── constants.ts     Valores por defecto y subdominios reservados
-└── __tests__/       Las reglas, con el reloj congelado donde hace falta
+src/
+├── app/             La página: layout, raíz y estilos
+├── components/      El calendario y el flujo de reserva
+├── actions/         reservar.ts: cáscara fina sobre crear_reserva()
+├── middleware.ts    Qué complejo sirve cada subdominio
+└── lib/
+    ├── tenant.ts    Del Host al complejo. Decisión de seguridad
+    ├── complejo.ts  Leer el complejo de la petición
+
+    ├── fechas.ts    El día de Argentina, contar noches, superposición
+    ├── precios.ts   Cotizar: cada noche por su fecha
+    ├── calendario.ts Ventana, mínimos, días de entrada, bloques enteros
+    ├── temporada.ts A qué temporada pertenece una fecha
+    ├── constants.ts Valores por defecto y subdominios reservados
+    └── __tests__/   Las reglas, con el reloj congelado donde hace falta
 
 supabase/migrations/
 ├── 001_core.sql           complejos, unidades, miembros, RLS
@@ -208,14 +460,18 @@ supabase/migrations/
 ├── 006_publico.sql        qué ve un visitante
 ├── 007_crear_reserva.sql  el único camino para ocupar una noche
 ├── 008_permisos.sql       que los permisos digan lo que parecen decir
-└── 009_nada_falla_en_silencio.sql  pendientes, testigo de vencimiento, desbloqueo
+├── 009_nada_falla_en_silencio.sql  pendientes, testigo de vencimiento, desbloqueo
+└── 010_endurecer.sql     lo que apareció al aplicarlo en Supabase de verdad
 
 scripts/
-├── migrate.ts        Aplica las migraciones a un proyecto de Supabase
-├── prueba-local.sh   Postgres al momento: migraciones, pruebas y la carrera
-├── prueba-base.sql   Las 57 pruebas de la base
-├── aislamiento.ts    Qué puede leer y escribir un visitante
-└── sin-marca.ts      Que ninguna marca de cliente esté en el código
+├── migrate.ts            Aplica las migraciones a un proyecto de Supabase
+├── dev-local.sh          Postgres + PostgREST + ejemplo: el producto sin Supabase
+├── ejemplo.sql           Un complejo inventado, con los casos que importan
+├── prueba-local.sh       Postgres al momento: migraciones, pruebas y la carrera
+├── prueba-base.sql       Las 68 pruebas de la base
+├── prueba-navegador.mts  El flujo de reserva en un Chromium de verdad
+├── aislamiento.ts        Qué puede leer y escribir un visitante
+└── sin-marca.ts          Que ninguna marca de cliente esté en el código
 ```
 
 Los comentarios del código explican **por qué**, no qué. Donde una regla sale

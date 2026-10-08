@@ -43,20 +43,65 @@ createdb -h "$TMP/run" -U postgres alojaos >/dev/null
 # ---------------------------------------------------------------------------
 # Lo que Supabase ya trae
 # ---------------------------------------------------------------------------
-# Los roles, el esquema `auth` y los permisos que Supabase le da por defecto a
-# `anon` y `authenticated` sobre `public`. Lo último importa: una migración los
-# revoca, y si acá no estuvieran el revoke pasaría sin hacer nada y el test
-# diría que todo está cerrado cuando en Supabase estaría abierto.
+# Los roles, el esquema `auth` y los permisos que Supabase le da por defecto
+# sobre `public`. Esto último importa, y ya falló una vez: reproducir mal el
+# entorno es peor que no probarlo, porque da una respuesta tranquilizadora y
+# falsa. Faltaba la línea de FUNCIONES, así que una migración que revocaba
+# EXECUTE "de PUBLIC" pasaba la prueba local mientras en Supabase cada función
+# seguía concedida a `anon` por un permiso explícito, que es de donde viene.
 $PSQL -d alojaos -q <<'SQL'
 CREATE ROLE anon NOLOGIN;
 CREATE ROLE authenticated NOLOGIN;
 CREATE ROLE service_role NOLOGIN BYPASSRLS;
-GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated;
+CREATE SCHEMA extensions;
+GRANT USAGE ON SCHEMA public, extensions TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
 
 CREATE SCHEMA auth;
 GRANT USAGE ON SCHEMA auth TO anon, authenticated;
 CREATE TABLE auth.users (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), email TEXT);
+
+-- El esquema de almacenamiento, en lo mínimo que las migraciones tocan: el
+-- registro de buckets, la tabla de objetos con RLS, y `foldername`, que es la
+-- que convierte una ruta en los tramos de los que sale el permiso.
+--
+-- Esto NO reproduce el almacenamiento de Supabase: no sube ni sirve archivos.
+-- Alcanza para que las migraciones se apliquen y para comprobar que las policies
+-- queden escritas como dicen. Que un archivo llegue de verdad lo prueba la
+-- batería de navegador contra un proyecto real.
+CREATE ROLE supabase_storage_admin NOLOGIN;
+CREATE SCHEMA storage AUTHORIZATION supabase_storage_admin;
+GRANT USAGE ON SCHEMA storage TO anon, authenticated, service_role;
+CREATE TABLE storage.buckets (
+  id TEXT PRIMARY KEY, name TEXT, public BOOLEAN DEFAULT false,
+  file_size_limit BIGINT, allowed_mime_types TEXT[]
+);
+CREATE TABLE storage.objects (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bucket_id TEXT REFERENCES storage.buckets(id),
+  name TEXT, owner UUID, created_at TIMESTAMPTZ DEFAULT now()
+);
+-- De `supabase_storage_admin`, como en el proyecto de verdad, y el rol que
+-- corre las migraciones NO es miembro de ese rol. Por eso allá el CREATE POLICY
+-- sobre esta tabla no entra, y por eso acá tampoco tiene que entrar: una base
+-- local más permisiva que la de producción contesta que todo anda y no es
+-- cierto. La prueba que lo vigila está en el bloque 13 de prueba-base.sql.
+ALTER TABLE storage.buckets OWNER TO supabase_storage_admin;
+ALTER TABLE storage.objects OWNER TO supabase_storage_admin;
+-- Los GRANT puestos y RLS prendido: igual que Supabase. Los permisos de tabla
+-- están, y lo que decide es RLS. Sin policies, no pasa nadie.
+GRANT ALL ON storage.buckets, storage.objects TO anon, authenticated, service_role;
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+-- Igual que en Supabase: los tramos de carpeta de una ruta, sin el archivo.
+CREATE FUNCTION storage.foldername(name TEXT) RETURNS TEXT[]
+LANGUAGE plpgsql IMMUTABLE AS $fn$
+DECLARE partes TEXT[];
+BEGIN
+  partes := string_to_array(name, '/');
+  RETURN partes[1 : array_length(partes, 1) - 1];
+END;
+$fn$;
 -- En Supabase sale del JWT; acá se simula con una variable de sesión, que es
 -- lo que permite probar las policies haciéndose pasar por un dueño.
 CREATE FUNCTION auth.uid() RETURNS UUID LANGUAGE sql STABLE AS $$
@@ -67,7 +112,19 @@ SQL
 echo "→ aplicando migraciones"
 for f in "$RAIZ"/supabase/migrations/*.sql; do
   printf '   %-26s' "$(basename "$f")"
-  $PSQL -d alojaos -q -f "$f" && echo "✓"
+  # Sin el `if`, esto estaba mintiendo. `set -e` NO aborta por el comando de la
+  # izquierda de un `&&`, así que con `$PSQL ... && echo "✓"` una migración que
+  # fallaba imprimía su error y el script seguía a las pruebas como si nada —
+  # que es exactamente la forma de error que este proyecto trata de evitar, en
+  # la herramienta que existe para detectarla. Pasó de verdad con la 011.
+  if ! $PSQL -d alojaos -f "$f" > "$TMP/migracion.log" 2>&1; then
+    echo "✗"
+    echo
+    echo "   La migración falló. Nada de lo que siga sirve, así que no sigo:"
+    sed 's/^/   /' "$TMP/migracion.log"
+    exit 1
+  fi
+  echo "✓"
 done
 
 echo
@@ -127,4 +184,30 @@ else
 fi
 
 echo
+
+# ---------------------------------------------------------------------------
+# El verificador de producción, corrido contra esta base
+# ---------------------------------------------------------------------------
+# `verificar-produccion.sql` se pega en el editor SQL del proyecto de Supabase
+# para contestar si la base de allá es la que dice el repo. Corriéndolo acá se
+# comprueba otra cosa, y hace falta: que el verificador mismo ande. Un
+# verificador con un error de sintaxis o con una firma de función mal escrita
+# contesta FALTA sobre algo que está, y eso manda a arreglar lo que no está roto.
+#
+# Acá, con todas las migraciones aplicadas, tiene que decir `ok` en todo.
+echo "→ el verificador de producción, contra esta base (tiene que dar todo ok)"
+VERIF="$TMP/verificacion.txt"
+if ! $PSQL -d alojaos -f "$RAIZ/scripts/verificar-produccion.sql" > "$VERIF" 2>&1; then
+  echo "   ✗ el verificador no corre:"
+  sed 's/^/   /' "$VERIF"
+  exit 1
+fi
+if grep -q "FALTA" "$VERIF"; then
+  echo "   ✗ el verificador dice que falta algo en una base con TODAS las migraciones."
+  echo "     O el verificador está mal, o una migración no hace lo que dice:"
+  grep -n "FALTA" "$VERIF" | sed 's/^/   /'
+  exit 1
+fi
+echo "   OK    todas las filas del verificador dan ok"
+
 echo "✓ todo bien"

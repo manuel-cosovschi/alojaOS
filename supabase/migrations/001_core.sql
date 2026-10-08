@@ -11,7 +11,19 @@
 -- chequeo `npm run sin-marca` falla si alguien vuelve a poner una marca en el
 -- código.
 
-CREATE EXTENSION IF NOT EXISTS btree_gist;
+-- Fuera de `public`, que es el esquema que Supabase expone como API: una
+-- extensión ahí le suma decenas de funciones (`gbt_*`, `*_dist`) a la superficie
+-- pública. La clase de operadores de un `EXCLUDE USING gist` se resuelve por
+-- tipo y método de acceso, no por `search_path`, así que la restricción de la
+-- 002 funciona igual desde otro esquema (probado).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'extensions') THEN
+    CREATE SCHEMA extensions;
+  END IF;
+END $$;
+
+CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA extensions;
 
 -- ============================================
 -- Complejos
