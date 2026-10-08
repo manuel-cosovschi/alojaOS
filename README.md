@@ -35,7 +35,7 @@ venta del producto.
 | **La página pública de reservas** | Los mails |
 | Cotización por noche, cruzando temporadas | La página comercial y el alta de clientes |
 | Reglas del calendario y días de entrada | El vencimiento programado (hoy corre al leer y al escribir) |
-| 57 pruebas de la base, 110 de las reglas, 23 de navegador | |
+| 68 pruebas de la base, 110 de las reglas, 23 de navegador | |
 
 ---
 
@@ -227,13 +227,51 @@ página no publique el nombre ni el teléfono de ningún huésped.
 Esta batería existe por un motivo concreto: el sistema anterior tenía una y **se
 perdió**, porque vivía fuera del repositorio.
 
-### Contra un proyecto de Supabase
+### Contra el proyecto de Supabase
+
+El proyecto de AlojaOS existe: `alojaos`, en `sa-east-1`, con las 10 migraciones
+aplicadas. La URL y la clave pública se sacan del dashboard (Project Settings →
+API) y van a `.env.local`; no están en el repositorio, aunque la clave pública
+viaje igual en el navegador.
 
 ```bash
 cp .env.example .env.local   # completá URL y claves
 npm run db:migrate
 npm run aislamiento
 ```
+
+Ojo: `npm run dev:local` **sobreescribe** `.env.local` apuntando al Postgres de
+al lado. Si venías trabajando contra Supabase, guardate una copia.
+
+### Lo que apareció al aplicarlo en Supabase de verdad
+
+Las nueve primeras migraciones pasaban la prueba local y en Supabase dejaron tres
+cosas mal. La tercera es la que importa:
+
+| Qué | Por qué no se había visto |
+|---|---|
+| Dos funciones de trigger sin `search_path` fijo | Olvido; el linter de Supabase lo marca y tenía razón |
+| `btree_gist` en `public`, el esquema que se expone como API | Nadie lo mira hasta que alguien lo mira |
+| **`anon` podía ejecutar tres funciones que no son para él** | **El arnés local no reproducía las default privileges de Supabase sobre funciones** |
+
+La migración 008 dice que los permisos tienen que decir lo que parecen decir, y
+revocaba `EXECUTE` de `PUBLIC`. En Supabase el permiso no viene de ahí: cada
+función nace con un `GRANT` **explícito** a `anon`, y revocar de `PUBLIC` no lo
+toca. El arnés no tenía esa concesión, así que la prueba que existe para que los
+permisos no mientan estaba corriendo contra una base donde los permisos eran
+otros.
+
+Reproducir mal el entorno es peor que no probarlo: da una respuesta
+tranquilizadora y falsa. Lo arreglado: el prelude de los dos scripts locales
+ahora concede lo mismo que Supabase, `prueba-base.sql` **afirma quién puede
+ejecutar qué** leyéndolo de la base, y sin la migración 010 esas aserciones
+fallan (comprobado).
+
+El linter va a seguir marcando las cinco funciones que `anon` sí puede llamar.
+Eso es a propósito: la página de reservas no tiene sesión. Son SECURITY DEFINER
+y cada una decide adentro qué devuelve — ninguna acepta el estado ni el importe
+de una reserva, ninguna devuelve datos de un huésped, y `crear_reserva` sólo
+puede dejar una seña pendiente.
 
 ---
 
@@ -265,14 +303,15 @@ supabase/migrations/
 ├── 006_publico.sql        qué ve un visitante
 ├── 007_crear_reserva.sql  el único camino para ocupar una noche
 ├── 008_permisos.sql       que los permisos digan lo que parecen decir
-└── 009_nada_falla_en_silencio.sql  pendientes, testigo de vencimiento, desbloqueo
+├── 009_nada_falla_en_silencio.sql  pendientes, testigo de vencimiento, desbloqueo
+└── 010_endurecer.sql     lo que apareció al aplicarlo en Supabase de verdad
 
 scripts/
 ├── migrate.ts            Aplica las migraciones a un proyecto de Supabase
 ├── dev-local.sh          Postgres + PostgREST + ejemplo: el producto sin Supabase
 ├── ejemplo.sql           Un complejo inventado, con los casos que importan
 ├── prueba-local.sh       Postgres al momento: migraciones, pruebas y la carrera
-├── prueba-base.sql       Las 57 pruebas de la base
+├── prueba-base.sql       Las 68 pruebas de la base
 ├── prueba-navegador.mts  El flujo de reserva en un Chromium de verdad
 ├── aislamiento.ts        Qué puede leer y escribir un visitante
 └── sin-marca.ts          Que ninguna marca de cliente esté en el código

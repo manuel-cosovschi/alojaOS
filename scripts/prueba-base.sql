@@ -604,6 +604,100 @@ BEGIN
 END $$;
 
 -- ============================================
+-- 12. Los permisos dicen lo que parecen decir
+-- ============================================
+-- Esto no estaba, y por no estar se escapó un problema real: la migración 008
+-- revocaba EXECUTE "de PUBLIC", que es de donde NO viene el permiso en Supabase
+-- —viene de un GRANT explícito a `anon`, por las default privileges del
+-- proyecto—. El arnés local no reproducía esa concesión, así que la prueba daba
+-- bien y el proyecto de verdad tenía tres funciones abiertas a `anon` que no son
+-- para él.
+--
+-- La lección no es "revisar mejor los GRANT": es que un permiso que importa se
+-- afirma en una prueba, no en el comentario de al lado.
+DO $$
+DECLARE
+  v_para_anon TEXT[];
+  v_esperado  TEXT[];
+BEGIN
+  -- Quién puede ejecutar qué, leído de la base y no de las migraciones.
+  SELECT coalesce(array_agg(p.proname ORDER BY p.proname), ARRAY[]::TEXT[])
+    INTO v_para_anon
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname IN ('complejo_publico','noches_ocupadas','estado_reserva',
+                       'cotizar_estadia','crear_reserva','temporada_de','es_miembro',
+                       'complejo_de_unidad','liberar_vencidas','reservas_pendientes',
+                       'salud_vencimientos','desbloquear')
+     AND has_function_privilege('anon', p.oid, 'EXECUTE');
+
+  -- La superficie pública del producto, completa y a propósito: la página de
+  -- reservas no tiene sesión, así que estas cinco se llaman sin cuenta.
+  v_esperado := ARRAY['complejo_publico','cotizar_estadia','crear_reserva',
+                      'estado_reserva','noches_ocupadas'];
+
+  PERFORM pg_temp.verificar('`anon` puede ejecutar exactamente las cinco públicas',
+    v_para_anon = v_esperado,
+    format('puede: %s', array_to_string(v_para_anon, ', ')));
+
+  -- Las que escriben o son del panel.
+  PERFORM pg_temp.verificar('`anon` no puede ejecutar liberar_vencidas()',
+    NOT has_function_privilege('anon', 'public.liberar_vencidas(uuid)', 'EXECUTE'));
+  PERFORM pg_temp.verificar('ni reservas_pendientes()',
+    NOT has_function_privilege('anon', 'public.reservas_pendientes(uuid)', 'EXECUTE'));
+  PERFORM pg_temp.verificar('ni desbloquear()',
+    NOT has_function_privilege('anon', 'public.desbloquear(uuid,uuid,date,date)', 'EXECUTE'));
+  PERFORM pg_temp.verificar('ni es_miembro(), que es para las policies',
+    NOT has_function_privilege('anon', 'public.es_miembro(uuid)', 'EXECUTE'));
+  PERFORM pg_temp.verificar('ni complejo_de_unidad(), que mapea unidad a complejo',
+    NOT has_function_privilege('anon', 'public.complejo_de_unidad(uuid)', 'EXECUTE'));
+
+  -- `authenticated` sí necesita las del panel y las de las policies.
+  PERFORM pg_temp.verificar('`authenticated` puede ejecutar reservas_pendientes()',
+    has_function_privilege('authenticated', 'public.reservas_pendientes(uuid)', 'EXECUTE'));
+  PERFORM pg_temp.verificar('y es_miembro(), que la llaman las policies',
+    has_function_privilege('authenticated', 'public.es_miembro(uuid)', 'EXECUTE'));
+  PERFORM pg_temp.verificar('pero no liberar_vencidas()',
+    NOT has_function_privilege('authenticated', 'public.liberar_vencidas(uuid)', 'EXECUTE'));
+END $$;
+
+-- Ninguna función del proyecto sin `search_path` fijo: sin eso, resuelve los
+-- nombres con el del invocador.
+DO $$
+DECLARE v_sueltas TEXT[];
+BEGIN
+  SELECT coalesce(array_agg(p.proname ORDER BY p.proname), ARRAY[]::TEXT[])
+    INTO v_sueltas
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.prokind = 'f'
+     -- Sólo las nuestras: las que trae btree_gist no son nuestras para arreglar.
+     AND p.proname IN ('complejo_publico','noches_ocupadas','estado_reserva',
+                       'cotizar_estadia','crear_reserva','temporada_de','es_miembro',
+                       'complejo_de_unidad','liberar_vencidas','reservas_pendientes',
+                       'salud_vencimientos','desbloquear','tocar_updated_at',
+                       'slug_inmutable','unidad_es_del_complejo')
+     AND NOT EXISTS (
+       SELECT 1 FROM unnest(coalesce(p.proconfig, ARRAY[]::TEXT[])) c
+        WHERE c LIKE 'search\_path=%'
+     );
+
+  PERFORM pg_temp.verificar('todas las funciones del proyecto fijan su search_path',
+    v_sueltas = ARRAY[]::TEXT[], format('sin fijar: %s', array_to_string(v_sueltas, ', ')));
+END $$;
+
+-- Y la extensión fuera del esquema que se expone como API.
+DO $$
+DECLARE v_esquema TEXT;
+BEGIN
+  SELECT n.nspname INTO v_esquema
+    FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
+   WHERE e.extname = 'btree_gist';
+  PERFORM pg_temp.verificar('btree_gist no está en el esquema expuesto',
+    v_esquema IS DISTINCT FROM 'public', format('está en %s', v_esquema));
+END $$;
+
+-- ============================================
 -- Resultado
 -- ============================================
 \echo ''

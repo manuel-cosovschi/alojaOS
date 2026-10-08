@@ -43,16 +43,20 @@ createdb -h "$TMP/run" -U postgres alojaos >/dev/null
 # ---------------------------------------------------------------------------
 # Lo que Supabase ya trae
 # ---------------------------------------------------------------------------
-# Los roles, el esquema `auth` y los permisos que Supabase le da por defecto a
-# `anon` y `authenticated` sobre `public`. Lo último importa: una migración los
-# revoca, y si acá no estuvieran el revoke pasaría sin hacer nada y el test
-# diría que todo está cerrado cuando en Supabase estaría abierto.
+# Los roles, el esquema `auth` y los permisos que Supabase le da por defecto
+# sobre `public`. Esto último importa, y ya falló una vez: reproducir mal el
+# entorno es peor que no probarlo, porque da una respuesta tranquilizadora y
+# falsa. Faltaba la línea de FUNCIONES, así que una migración que revocaba
+# EXECUTE "de PUBLIC" pasaba la prueba local mientras en Supabase cada función
+# seguía concedida a `anon` por un permiso explícito, que es de donde viene.
 $PSQL -d alojaos -q <<'SQL'
 CREATE ROLE anon NOLOGIN;
 CREATE ROLE authenticated NOLOGIN;
 CREATE ROLE service_role NOLOGIN BYPASSRLS;
-GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated;
+CREATE SCHEMA extensions;
+GRANT USAGE ON SCHEMA public, extensions TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
 
 CREATE SCHEMA auth;
 GRANT USAGE ON SCHEMA auth TO anon, authenticated;
