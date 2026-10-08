@@ -28,7 +28,8 @@ INSERT INTO complejos (
   localidad, provincia, direccion, lat, lng,
   whatsapp, instagram, email,
   color_principal, color_fondo, color_texto, color_acento,
-  mes_inicio_temporada, porcentaje_sena, horas_vencimiento_sena, reservas_habilitadas
+  mes_inicio_temporada, porcentaje_sena, horas_vencimiento_sena, reservas_habilitadas,
+  datos_transferencia
 ) VALUES (
   '0a0a0a0a-0000-0000-0000-00000000000a',
   'cabanias-del-sol',
@@ -38,7 +39,8 @@ INSERT INTO complejos (
   'Villa Ejemplo', 'Buenos Aires', 'Calle Falsa 123', -37.123456, -57.123456,
   '5490000000000', '@cabaniasdelsol', 'hola@ejemplo.test',
   '#2f5d50', '#f6f4ef', '#1b2b26', '#c2703d',
-  12, 50, 6, true
+  12, 50, 6, true,
+  E'Alias: cabanias.del.sol\nCBU: 0000003100000000000000\nTitular: Cabañas del Sol SRL'
 );
 
 INSERT INTO complejo_miembros (complejo_id, user_id)

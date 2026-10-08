@@ -1,6 +1,7 @@
 import { leerComplejo, nochesOcupadas, slugDeLaPeticion } from '@/lib/complejo';
 import { hoyISO } from '@/lib/fechas';
 import { Reservar } from '@/components/Reservar';
+import { datosParaTransferir } from '@/actions/comprobante';
 
 /**
  * La raíz.
@@ -24,6 +25,12 @@ export default async function Pagina() {
 
   const ocupadas = await nochesOcupadas(complejo.id);
   const hoy = hoyISO(complejo.zona_horaria);
+  // Los datos bancarios van aparte de `complejo_publico` a propósito: así no
+  // quedan en el HTML de cada visita, ni de cada robot que pase por la página.
+  // Hacen falta recién cuando alguien reservó.
+  const { datos: datosTransferencia } = complejo.reservas_habilitadas
+    ? await datosParaTransferir(slug)
+    : { datos: null };
 
   const { marca } = complejo;
   const estilo = {
@@ -51,7 +58,12 @@ export default async function Pagina() {
 
       <main className="mx-auto max-w-3xl px-4 py-8 sm:px-8">
         {complejo.reservas_habilitadas ? (
-          <Reservar complejo={complejo} ocupadas={ocupadas} hoy={hoy} />
+          <Reservar
+            complejo={complejo}
+            ocupadas={ocupadas}
+            hoy={hoy}
+            datosTransferencia={datosTransferencia}
+          />
         ) : (
           <CerradoPorAhora whatsapp={complejo.whatsapp} />
         )}

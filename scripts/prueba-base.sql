@@ -358,11 +358,16 @@ BEGIN
        WHERE n.unidad_id = 'bbbbbbbb-0000-0000-0000-000000000009'
     ));
 
-  -- El estado de una reserva: sólo estado y vencimiento.
+  -- El estado de una reserva: el estado, el vencimiento, y si el comprobante
+  -- llegó. Nada más — y en particular NO la ruta del archivo, que es la
+  -- dirección del comprobante de una persona.
   v := public.estado_reserva((SELECT id FROM reservas WHERE huesped_nombre = 'Ana' LIMIT 1));
   PERFORM pg_temp.verificar('el estado de una reserva no trae nada más',
-    (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(v) k) = ARRAY['estado','vence_el'],
+    (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(v) k)
+      = ARRAY['comprobante','comprobante_subido_el','estado','vence_el'],
     v::text);
+  PERFORM pg_temp.verificar('y nunca la ruta del archivo',
+    NOT (v ? 'comprobante_path'), v::text);
 
   -- Un id que no existe contesta lo mismo que uno de otro: nada.
   v := public.estado_reserva('99999999-9999-9999-9999-999999999999');
@@ -621,24 +626,42 @@ DECLARE
   v_esperado  TEXT[];
 BEGIN
   -- Quién puede ejecutar qué, leído de la base y no de las migraciones.
-  SELECT coalesce(array_agg(p.proname ORDER BY p.proname), ARRAY[]::TEXT[])
+  --
+  -- Enumera TODO `public`, no una lista de nombres escrita a mano. La lista a
+  -- mano es lo que había antes, y dejó pasar tres funciones de trigger con
+  -- EXECUTE concedido a PUBLIC durante diez migraciones: no estaban en la
+  -- lista, así que nadie las miró. Lo encontró el verificador de producción,
+  -- que sí enumeraba todo, y la migración 012 las cerró.
+  --
+  -- La lección es la de siempre acá: una prueba que mira lo que uno se acordó
+  -- de anotar comprueba la memoria de uno, no la base.
+  SELECT coalesce(array_agg(p.proname::text ORDER BY p.proname), ARRAY[]::TEXT[])
     INTO v_para_anon
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public'
-     AND p.proname IN ('complejo_publico','noches_ocupadas','estado_reserva',
-                       'cotizar_estadia','crear_reserva','temporada_de','es_miembro',
-                       'complejo_de_unidad','liberar_vencidas','reservas_pendientes',
-                       'salud_vencimientos','desbloquear')
+     AND p.prokind = 'f'
      AND has_function_privilege('anon', p.oid, 'EXECUTE');
 
   -- La superficie pública del producto, completa y a propósito: la página de
   -- reservas no tiene sesión, así que estas cinco se llaman sin cuenta.
   v_esperado := ARRAY['complejo_publico','cotizar_estadia','crear_reserva',
-                      'estado_reserva','noches_ocupadas'];
+                      'datos_para_transferir','estado_reserva','noches_ocupadas'];
 
-  PERFORM pg_temp.verificar('`anon` puede ejecutar exactamente las cinco públicas',
+  PERFORM pg_temp.verificar('`anon` puede ejecutar exactamente las públicas, y ninguna más',
     v_para_anon = v_esperado,
     format('puede: %s', array_to_string(v_para_anon, ', ')));
+
+  -- La que escribe la ruta del comprobante en una reserva. Si `anon` pudiera,
+  -- escribiría la ruta que quisiera en la reserva de cualquiera.
+  PERFORM pg_temp.verificar('ni `anon` ni `authenticated` pueden registrar_comprobante()',
+    NOT has_function_privilege('anon', 'public.registrar_comprobante(uuid,text)', 'EXECUTE')
+    AND NOT has_function_privilege('authenticated', 'public.registrar_comprobante(uuid,text)', 'EXECUTE'));
+  PERFORM pg_temp.verificar('pero `service_role` sí, que es quien sube el archivo',
+    has_function_privilege('service_role', 'public.registrar_comprobante(uuid,text)', 'EXECUTE'));
+  PERFORM pg_temp.verificar('`anon` no puede aprobar una seña',
+    NOT has_function_privilege('anon', 'public.aprobar_sena(uuid)', 'EXECUTE'));
+  PERFORM pg_temp.verificar('ni rechazarla',
+    NOT has_function_privilege('anon', 'public.rechazar_sena(uuid,text)', 'EXECUTE'));
 
   -- Las que escriben o son del panel.
   PERFORM pg_temp.verificar('`anon` no puede ejecutar liberar_vencidas()',
@@ -671,12 +694,9 @@ BEGIN
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public'
      AND p.prokind = 'f'
-     -- Sólo las nuestras: las que trae btree_gist no son nuestras para arreglar.
-     AND p.proname IN ('complejo_publico','noches_ocupadas','estado_reserva',
-                       'cotizar_estadia','crear_reserva','temporada_de','es_miembro',
-                       'complejo_de_unidad','liberar_vencidas','reservas_pendientes',
-                       'salud_vencimientos','desbloquear','tocar_updated_at',
-                       'slug_inmutable','unidad_es_del_complejo')
+     -- Todas, no una lista: la 010 movió btree_gist a `extensions` justamente
+     -- para que en `public` no quede nada que no sea del producto. Si algún día
+     -- aparece acá una función ajena, esta prueba lo dice en vez de omitirla.
      AND NOT EXISTS (
        SELECT 1 FROM unnest(coalesce(p.proconfig, ARRAY[]::TEXT[])) c
         WHERE c LIKE 'search\_path=%'
@@ -695,6 +715,228 @@ BEGIN
    WHERE e.extname = 'btree_gist';
   PERFORM pg_temp.verificar('btree_gist no está en el esquema expuesto',
     v_esquema IS DISTINCT FROM 'public', format('está en %s', v_esquema));
+END $$;
+
+-- ============================================
+-- 13. El comprobante de la seña
+-- ============================================
+-- En el sistema anterior los comprobantes NUNCA se guardaron: la subida
+-- contestaba "ok", el archivo no llegaba, y nadie supo durante meses porque el
+-- error se ignoraba a propósito. Estas pruebas son contra esa forma.
+DO $$
+DECLARE
+  v_reserva UUID;
+  v JSONB;
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+
+  -- Una seña viva, de las que esperan comprobante.
+  INSERT INTO reservas (complejo_id, unidad_id, check_in, check_out, estado, origen,
+                        huesped_nombre, importe, vence_el)
+  VALUES ('aaaaaaaa-0000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000002',
+          '2027-07-10', '2027-07-14', 'HOLD_TRANSFER', 'web', 'Va a transferir', 400000,
+          now() + interval '5 hours')
+  RETURNING id INTO v_reserva;
+
+  -- Antes de subir nada, el huésped ve que el sistema NO lo tiene. Esto es lo
+  -- que hace que el bug viejo no pueda durar: se verifica solo.
+  v := public.estado_reserva(v_reserva);
+  PERFORM pg_temp.verificar('antes de subir, el estado dice que no hay comprobante',
+    (v->>'comprobante')::boolean = false, v::text);
+
+  -- Registrar sin ruta no registra nada.
+  v := public.registrar_comprobante(v_reserva, '   ');
+  PERFORM pg_temp.verificar('registrar sin archivo no dice que sí',
+    NOT (v->>'ok')::boolean AND v->>'motivo' = 'sin_archivo', v::text);
+  PERFORM pg_temp.verificar('y la reserva sigue sin comprobante',
+    (SELECT comprobante_path IS NULL FROM reservas WHERE id = v_reserva));
+
+  -- Con ruta, sí.
+  v := public.registrar_comprobante(v_reserva,
+        'aaaaaaaa-0000-0000-0000-000000000001/' || v_reserva || '/transferencia.jpg');
+  PERFORM pg_temp.verificar('con archivo, queda registrado',
+    (v->>'ok')::boolean AND NOT (v->>'reemplazo')::boolean, v::text);
+
+  -- Y ahora el huésped lo ve.
+  v := public.estado_reserva(v_reserva);
+  PERFORM pg_temp.verificar('el huésped puede comprobar él mismo que llegó',
+    (v->>'comprobante')::boolean AND v->>'comprobante_subido_el' IS NOT NULL, v::text);
+
+  -- Pero NO la ruta: es la dirección del archivo de una persona.
+  PERFORM pg_temp.verificar('el estado no publica dónde está guardado',
+    NOT (v ? 'comprobante_path'), v::text);
+
+  -- Volver a subir reemplaza, y lo dice. La primera foto sale mal seguido.
+  v := public.registrar_comprobante(v_reserva,
+        'aaaaaaaa-0000-0000-0000-000000000001/' || v_reserva || '/otra.jpg');
+  PERFORM pg_temp.verificar('se puede volver a subir, y avisa que reemplazó',
+    (v->>'ok')::boolean AND (v->>'reemplazo')::boolean, v::text);
+
+  -- Media verdad no se puede guardar: ruta sin fecha, o fecha sin ruta.
+  BEGIN
+    UPDATE reservas SET comprobante_subido_el = NULL WHERE id = v_reserva;
+    PERFORM pg_temp.verificar('no se puede dejar la ruta sin su fecha', false);
+  EXCEPTION WHEN check_violation THEN
+    PERFORM pg_temp.verificar('no se puede dejar la ruta sin su fecha', true);
+  END;
+
+  -- El dueño aprueba.
+  v := public.aprobar_sena(v_reserva);
+  PERFORM pg_temp.verificar('el dueño aprueba la seña', (v->>'ok')::boolean, v::text);
+  PERFORM pg_temp.verificar('y la reserva queda confirmada, sin vencimiento colgado',
+    (SELECT estado = 'CONFIRMED' AND vence_el IS NULL AND aprobada_el IS NOT NULL
+       FROM reservas WHERE id = v_reserva));
+
+  -- Aprobar de nuevo no duplica nada, y lo dice en vez de fingir que hizo algo.
+  v := public.aprobar_sena(v_reserva);
+  PERFORM pg_temp.verificar('aprobar dos veces lo dice en vez de fingir',
+    (v->>'ok')::boolean AND (v->>'ya_estaba')::boolean, v::text);
+
+  -- Una confirmada ya no espera seña.
+  v := public.registrar_comprobante(v_reserva, 'x/y/z.jpg');
+  PERFORM pg_temp.verificar('una confirmada no acepta otro comprobante',
+    NOT (v->>'ok')::boolean AND v->>'motivo' = 'no_espera_sena', v::text);
+
+  -- Y la noche sigue ocupada después de aprobar: la unidad no se liberó.
+  PERFORM pg_temp.verificar('la noche sigue ocupada después de aprobar',
+    EXISTS (
+      SELECT 1 FROM public.noches_ocupadas('aaaaaaaa-0000-0000-0000-000000000001')
+       WHERE check_in = '2027-07-10'
+    ));
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+END $$;
+
+-- Un hold que venció no acepta comprobante, y lo dice con un motivo que se le
+-- puede mostrar a una persona.
+DO $$
+DECLARE
+  v_reserva UUID;
+  v JSONB;
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+
+  INSERT INTO reservas (complejo_id, unidad_id, check_in, check_out, estado, origen,
+                        huesped_nombre, vence_el)
+  VALUES ('aaaaaaaa-0000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000002',
+          '2027-08-10', '2027-08-14', 'HOLD_TRANSFER', 'web', 'Llegó tarde',
+          now() - interval '2 hours')
+  RETURNING id INTO v_reserva;
+
+  v := public.registrar_comprobante(v_reserva, 'a/b/tarde.jpg');
+  PERFORM pg_temp.verificar('un hold vencido no acepta comprobante',
+    NOT (v->>'ok')::boolean AND v->>'motivo' = 'vencida', v::text);
+  PERFORM pg_temp.verificar('y el mensaje es para una persona, no un código',
+    length(coalesce(v->>'mensaje', '')) > 20, v->>'mensaje');
+
+  -- Rechazar libera las noches.
+  INSERT INTO reservas (complejo_id, unidad_id, check_in, check_out, estado, origen,
+                        huesped_nombre, vence_el)
+  VALUES ('aaaaaaaa-0000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000002',
+          '2027-09-10', '2027-09-14', 'HOLD_TRANSFER', 'web', 'Seña falsa',
+          now() + interval '3 hours')
+  RETURNING id INTO v_reserva;
+
+  v := public.rechazar_sena(v_reserva, 'El comprobante era de otra transferencia.');
+  PERFORM pg_temp.verificar('el dueño puede rechazar la seña', (v->>'ok')::boolean, v::text);
+  PERFORM pg_temp.verificar('y las noches quedan libres',
+    NOT EXISTS (
+      SELECT 1 FROM public.noches_ocupadas('aaaaaaaa-0000-0000-0000-000000000001')
+       WHERE check_in = '2027-09-10'
+    ));
+  PERFORM pg_temp.verificar('con el motivo guardado para el dueño',
+    (SELECT motivo_rechazo IS NOT NULL FROM reservas WHERE id = v_reserva));
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+END $$;
+
+-- El vecino no puede aprobar ni rechazar lo ajeno.
+DO $$
+DECLARE
+  v_ajena UUID;
+  v_ok BOOLEAN;
+BEGIN
+  SELECT id INTO v_ajena FROM reservas
+   WHERE complejo_id = 'aaaaaaaa-0000-0000-0000-000000000001'
+     AND estado = 'HOLD_TRANSFER' LIMIT 1;
+
+  IF v_ajena IS NOT NULL THEN
+    PERFORM set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+    BEGIN
+      PERFORM public.aprobar_sena(v_ajena);
+      v_ok := false;
+    EXCEPTION WHEN insufficient_privilege THEN
+      v_ok := true;
+    END;
+    PERFORM pg_temp.verificar('el vecino no puede aprobar una seña ajena', v_ok);
+
+    BEGIN
+      PERFORM public.rechazar_sena(v_ajena, 'no');
+      v_ok := false;
+    EXCEPTION WHEN insufficient_privilege THEN
+      v_ok := true;
+    END;
+    PERFORM pg_temp.verificar('ni rechazarla', v_ok);
+    PERFORM set_config('request.jwt.claim.sub', '', true);
+  END IF;
+END $$;
+
+-- ------------------------------------------------------------------
+-- Los archivos: el bucket es privado y nadie los lee salvo el servidor
+-- ------------------------------------------------------------------
+-- La forma en que `storage.objects` queda cerrado es RLS prendido y CERO
+-- policies. Eso hay que comprobarlo de las dos maneras, porque cada una sola
+-- miente: RLS prendido con una policy permisiva abre todo, y cero policies con
+-- RLS apagado también.
+--
+-- Y la cantidad de policies tiene que ser exactamente cero, no "ninguna para
+-- `anon`". En un proyecto Supabase administrado la tabla es de
+-- `supabase_storage_admin` y el rol de las migraciones no puede crear policies
+-- ahí: una que aparezca en esta base existiría acá y no en producción, y las
+-- pruebas estarían corriendo contra otra base. Si este bloque falla, lo que hay
+-- que sacar es la policy, no la prueba.
+DO $$
+DECLARE
+  v_publico BOOLEAN;
+  v_policies INTEGER;
+  v_rls BOOLEAN;
+  v_limite BIGINT;
+  v_tipos TEXT[];
+BEGIN
+  SELECT public, file_size_limit, allowed_mime_types
+    INTO v_publico, v_limite, v_tipos
+    FROM storage.buckets WHERE id = 'comprobantes';
+
+  PERFORM pg_temp.verificar('el bucket de comprobantes es privado',
+    v_publico = false, format('public = %s', v_publico));
+
+  -- El límite y los tipos los hace cumplir el almacenamiento, no el navegador:
+  -- la validación del formulario es para explicar, no para impedir.
+  PERFORM pg_temp.verificar('el bucket no acepta más de 8 MB',
+    v_limite = 8388608, format('%s bytes', v_limite));
+  PERFORM pg_temp.verificar('el bucket sólo acepta imágenes y PDF',
+    v_tipos @> ARRAY['image/jpeg', 'application/pdf']
+    AND NOT (v_tipos @> ARRAY['text/html']), v_tipos::text);
+
+  SELECT relrowsecurity INTO v_rls
+    FROM pg_class WHERE relname = 'objects' AND relnamespace = 'storage'::regnamespace;
+  PERFORM pg_temp.verificar('storage.objects tiene RLS prendido',
+    v_rls, format('relrowsecurity = %s', v_rls));
+
+  SELECT count(*) INTO v_policies
+    FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects';
+  PERFORM pg_temp.verificar('no hay ninguna policy de archivos (ni para `anon` ni para el dueño)',
+    v_policies = 0,
+    format('%s policies: %s', v_policies,
+      (SELECT coalesce(string_agg(policyname, ', '), '')
+         FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects')));
+
+  -- Lo que hace que el servidor sí pueda: BYPASSRLS. Si `anon` lo tuviera, todo
+  -- lo de arriba daría igual.
+  PERFORM pg_temp.verificar('sólo `service_role` pasa por encima de RLS',
+    (SELECT rolbypassrls FROM pg_roles WHERE rolname = 'service_role')
+    AND NOT (SELECT rolbypassrls FROM pg_roles WHERE rolname = 'anon')
+    AND NOT (SELECT rolbypassrls FROM pg_roles WHERE rolname = 'authenticated'));
 END $$;
 
 -- ============================================

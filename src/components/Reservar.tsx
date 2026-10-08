@@ -20,17 +20,20 @@ import { validar, type Reglas } from '@/lib/calendario';
 import { cotizar } from '@/lib/precios';
 import { Calendario, type Ocupada } from './Calendario';
 import { pedirReserva, type Resultado } from '@/actions/reservar';
+import { Comprobante } from './Comprobante';
 
 interface Props {
   complejo: Complejo;
   ocupadas: Array<{ unidad_id: string; codigo: string; check_in: string; check_out: string }>;
   hoy: DiaISO;
+  /** Dónde transferir, como lo escribió el dueño. Puede no estar cargado. */
+  datosTransferencia: string | null;
 }
 
 const plata = (n: number, moneda: string) =>
   new Intl.NumberFormat('es-AR', { style: 'currency', currency: moneda, maximumFractionDigits: 0 }).format(n);
 
-export function Reservar({ complejo, ocupadas, hoy }: Props) {
+export function Reservar({ complejo, ocupadas, hoy, datosTransferencia }: Props) {
   const [unidadId, setUnidadId] = useState<string>(complejo.unidades[0]?.id ?? '');
   const [checkIn, setCheckIn] = useState<DiaISO | null>(null);
   const [checkOut, setCheckOut] = useState<DiaISO | null>(null);
@@ -119,7 +122,19 @@ export function Reservar({ complejo, ocupadas, hoy }: Props) {
   }
 
   if (resultado?.ok) {
-    return <Registrada complejo={complejo} resultado={resultado} />;
+    return (
+      <Comprobante
+        reservaId={resultado.id}
+        moneda={complejo.moneda}
+        sena={resultado.sena}
+        total={resultado.total}
+        venceEl={resultado.venceEl}
+        zonaHoraria={complejo.zona_horaria}
+        noches={resultado.noches}
+        datosTransferencia={datosTransferencia}
+        whatsapp={complejo.whatsapp}
+      />
+    );
   }
 
   return (
@@ -283,61 +298,6 @@ export function Reservar({ complejo, ocupadas, hoy }: Props) {
   );
 }
 
-function Registrada({
-  complejo,
-  resultado,
-}: {
-  complejo: Complejo;
-  resultado: Extract<Resultado, { ok: true }>;
-}) {
-  const vence = new Date(resultado.venceEl).toLocaleString('es-AR', {
-    timeZone: complejo.zona_horaria,
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-
-  return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6">
-        <h2 className="font-semibold text-emerald-900">Te guardamos la unidad</h2>
-        <p className="mt-2 text-sm text-emerald-900">
-          {resultado.noches} {resultado.noches === 1 ? 'noche' : 'noches'} ·{' '}
-          Seña a transferir: <strong>{plata(resultado.sena, complejo.moneda)}</strong> de{' '}
-          {plata(resultado.total, complejo.moneda)}.
-        </p>
-        <p className="mt-2 text-sm text-emerald-900">
-          Vence el <strong>{vence}</strong>. Si no llega la transferencia antes de
-          esa hora, las fechas se liberan solas.
-        </p>
-      </div>
-
-      <div className="rounded-2xl border border-black/10 bg-white/60 p-6 text-sm">
-        <p className="font-medium">Qué sigue</p>
-        <p className="mt-2 opacity-80">
-          Falta subir el comprobante de la transferencia: esa parte todavía no
-          está construida.
-          {complejo.whatsapp && (
-            <>
-              {' '}Por ahora mandanoslo por{' '}
-              <a
-                className="underline"
-                href={`https://wa.me/${complejo.whatsapp}`}
-                target="_blank"
-                rel="noopener"
-              >
-                WhatsApp
-              </a>
-              .
-            </>
-          )}
-        </p>
-        <p className="mt-3 text-xs opacity-60">Número de reserva: {resultado.id}</p>
-      </div>
-    </div>
-  );
-}
 
 function Campo({
   etiqueta,

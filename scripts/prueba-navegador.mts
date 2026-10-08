@@ -25,11 +25,58 @@
  */
 
 import { chromium, type Page } from 'playwright';
+import { execFileSync } from 'node:child_process';
 
 const PUERTO = process.env.ALOJAOS_PORT ?? '3000';
 const SLUG = process.env.ALOJAOS_SLUG ?? 'cabanias-del-sol';
 const RAIZ = process.env.ALOJAOS_ROOT_DOMAIN ?? 'alojaos.test';
 const BASE = `http://${SLUG}.${RAIZ}:${PUERTO}`;
+
+/** Con este nombre reserva la batería, y por este nombre se limpia. */
+const HUESPED = 'Prueba de Navegador';
+
+/**
+ * Borra la reserva que dejó la corrida anterior.
+ *
+ * La batería reserva de verdad: cuando termina hay un HOLD_TRANSFER del 20 al
+ * 24 de noviembre sobre la misma unidad. Correrla dos veces contra la misma
+ * base fallaba al tocar el 20, porque esas noches estaban tomadas —y eso es
+ * correcto, es la restricción de exclusión haciendo su trabajo—. Pero una
+ * batería que sólo pasa la primera vez es una batería que después se explica
+ * como «capaz quedó algo colgado», y así se tapa una falla de verdad.
+ *
+ * Se borra por el nombre del huésped, que es de la batería y de nadie más.
+ * Habla con la base de `dev:local` (127.0.0.1:5433, que es la que ese script
+ * levanta), no con Supabase: si no la encuentra, no es un error, simplemente no
+ * hay nada que limpiar y lo dice.
+ */
+function limpiarLoDeAntes(): string {
+  // Cuántas borró lo tiene que contestar la base, no el texto que imprime psql:
+  // con `-q` psql no imprime el `DELETE 1`, así que leer ese cartel daba
+  // siempre cero y el mensaje decía «la base estaba limpia» cuando no lo
+  // estaba. Un mensaje tranquilizador y falso, que es justo lo que este
+  // proyecto persigue.
+  const sql =
+    `WITH borradas AS (DELETE FROM reservas WHERE huesped_nombre = '${HUESPED}' RETURNING 1) ` +
+    'SELECT count(*) FROM borradas;';
+  try {
+    const salida = execFileSync(
+      'psql',
+      ['-h', '127.0.0.1', '-p', process.env.ALOJAOS_DEV_PG_PORT ?? '5433',
+       '-U', 'postgres', '-d', 'alojaos', '-t', '-A',
+       '-v', 'ON_ERROR_STOP=1', '-c', sql],
+      { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10_000 }
+    );
+    const cuantas = salida.trim();
+    return cuantas === '0'
+      ? 'la base estaba limpia'
+      : `borré ${cuantas} reserva(s) que había dejado una corrida anterior`;
+  } catch {
+    // Sin psql, o con la base en otro puerto. No se corta: si quedó algo
+    // ocupado, `tocarDia()` lo va a decir con todas las letras.
+    return 'no pude limpiar (no encontré la base de dev:local); si falla un día ocupado, es por esto';
+  }
+}
 
 let fallas = 0;
 const verificar = (ok: boolean, nombre: string, detalle = '') => {
@@ -45,12 +92,59 @@ async function irAlMes(page: Page, etiqueta: string) {
     await page.getByLabel('Mes siguiente').click();
     await page.waitForTimeout(40);
   }
-  return false;
+  // No se devuelve `false` para que lo ignore quien llama: 24 toques sin llegar
+  // al mes pedido significa que el calendario no llega hasta ahí, y todo lo que
+  // siga va a fallar por otra razón y en otro lugar.
+  throw new Error(
+    `El calendario no llegó a «${etiqueta}» en 24 toques de «Mes siguiente». ` +
+    `Quedó mostrando «${(await page.locator('div.mb-3 > div.text-sm').innerText()).trim()}».`
+  );
 }
 
 const dia = (page: Page, etiquetaAria: string) => page.getByLabel(etiquetaAria, { exact: true });
 
+/**
+ * Toca un día del calendario y, si no se puede, dice por qué.
+ *
+ * `locator.click()` sobre un día que no está no explica nada: espera 30
+ * segundos y tira un TimeoutError con el selector. Eso ya mandó a buscar un bug
+ * donde no había ninguno —la batería había dejado una reserva de la corrida
+ * anterior, esas noches estaban ocupadas, y el día simplemente no era tocable—.
+ *
+ * Un día no tocable tiene tres causas posibles y la pantalla las distingue, así
+ * que la prueba también:
+ *   - el mes que se está mostrando no es el que la prueba cree;
+ *   - el día no existe en el calendario (está fuera de la temporada cargada);
+ *   - el día existe pero está deshabilitado (ocupado, pasado, o no es día de
+ *     entrada según las reglas del complejo).
+ */
+async function tocarDia(page: Page, etiquetaAria: string) {
+  const mes = (await page.locator('div.mb-3 > div.text-sm').innerText()).trim();
+  const boton = dia(page, etiquetaAria);
+
+  if ((await boton.count()) === 0) {
+    throw new Error(
+      `No encontré «${etiquetaAria}» en el calendario. El mes que se está mostrando es «${mes}».\n` +
+      '   Si el mes es el correcto, ese día no está en el calendario cargado.'
+    );
+  }
+
+  if (await boton.isDisabled()) {
+    throw new Error(
+      `El día «${etiquetaAria}» está en pantalla pero deshabilitado (mes mostrado: «${mes}»).\n` +
+      '   Casi siempre es porque esas noches ya están tomadas. La batería DEJA una\n' +
+      '   reserva cuando termina, así que correrla dos veces contra la misma base\n' +
+      '   falla acá. Levantá el entorno de nuevo con `npm run dev:local`, que parte\n' +
+      '   de una base limpia, y volvé a correrla.'
+    );
+  }
+
+  await boton.click();
+}
+
 async function main() {
+  console.log(`→ ${limpiarLoDeAntes()}\n`);
+
   // El `Host` decide qué complejo se sirve, así que la prueba tiene que pedir
   // por el nombre de verdad. Chromium no permite sobreescribir esa cabecera a
   // mano —y está bien que no—, así que se le resuelve el nombre al navegador,
@@ -101,7 +195,7 @@ async function main() {
   // --- El mínimo de noches y el día de entrada ------------------------------
   // El 16/1/2027 es sábado, y en temporada alta el mínimo es 7 noches.
   await dieciseis.click();
-  await dia(page, '19 de enero de 2027').click();
+  await tocarDia(page, '19 de enero de 2027');
   await page.waitForTimeout(120);
   verificar(
     (await page.getByText(/mínimo es de 7 noches/).count()) > 0,
@@ -111,7 +205,7 @@ async function main() {
   // Siete noches desde el sábado: entra.
   await page.getByRole('button', { name: 'elegir otras fechas' }).click().catch(() => {});
   await dieciseis.click();
-  await dia(page, '23 de enero de 2027').click();
+  await tocarDia(page, '23 de enero de 2027');
   await page.waitForTimeout(150);
   verificar(
     (await page.getByText(/mínimo es de 7 noches/).count()) === 0,
@@ -136,8 +230,8 @@ async function main() {
   // mínimo y su día de entrada. Es la regla del complejo, no un detalle de la
   // prueba.
   await irAlMesAtras(page, 'diciembre 2026');
-  await dia(page, '19 de diciembre de 2026').click();
-  await dia(page, '26 de diciembre de 2026').click();
+  await tocarDia(page, '19 de diciembre de 2026');
+  await tocarDia(page, '26 de diciembre de 2026');
   await page.waitForTimeout(150);
   const textoPrecio = await page.locator('div.mt-2.rounded-xl').first().innerText();
   // SOL1: una noche a 72.000 (el 19) + seis a 148.000 = 960.000
@@ -155,8 +249,8 @@ async function main() {
   await page.getByRole('button', { name: /Cabaña del Tala/ }).click();
   await page.waitForTimeout(120);
   await irAlMes(page, 'enero 2027');
-  await dia(page, '9 de enero de 2027').click();
-  await dia(page, '16 de enero de 2027').click();
+  await tocarDia(page, '9 de enero de 2027');
+  await tocarDia(page, '16 de enero de 2027');
   await page.waitForTimeout(150);
   verificar(
     (await page.getByText(/Todavía no tenemos tarifa publicada/).count()) > 0,
@@ -168,12 +262,12 @@ async function main() {
   await page.waitForTimeout(120);
   await irAlMesAtras(page, 'noviembre 2026');
   // El bloque fijo del 20 al 24: tomarlo entero tiene que entrar.
-  await dia(page, '20 de noviembre de 2026').click();
-  await dia(page, '24 de noviembre de 2026').click();
+  await tocarDia(page, '20 de noviembre de 2026');
+  await tocarDia(page, '24 de noviembre de 2026');
   await page.waitForTimeout(150);
 
   await page.getByLabel('Personas').fill('2');
-  await page.getByLabel('Nombre y apellido').fill('Prueba de Navegador');
+  await page.getByLabel('Nombre y apellido').fill(HUESPED);
   await page.getByLabel('DNI').fill('30999888');
   await page.getByLabel('Teléfono').fill('5490000009999');
   await page.getByLabel('Mail').fill('prueba@ejemplo.test');
@@ -193,6 +287,75 @@ async function main() {
       texto.replace(/\n/g, ' | ')
     );
     verificar(texto.includes('Vence el'), 'y con el vencimiento de la seña a la vista');
+
+    // --- Dónde transferir -------------------------------------------------
+    verificar(
+      (await page.getByText('Alias: cabanias.del.sol').count()) > 0,
+      'la pantalla dice dónde transferir, con lo que cargó el dueño'
+    );
+    verificar(
+      (await page.getByText(/Subí la foto o el PDF/).count()) > 0,
+      'y pide el comprobante'
+    );
+    verificar(
+      (await page.getByText('Lo tenemos.').count()) === 0,
+      'y todavía NO dice que lo tiene, porque no se subió nada'
+    );
+
+    // --- Una falla de subida no se puede ver como éxito -------------------
+    // Esto es la prueba del bug histórico. En el sistema anterior la subida
+    // contestaba "ok" sin guardar el archivo, durante meses. Acá se corre con
+    // la subida rota a propósito —sin clave de servicio— y lo que tiene que
+    // pasar es que la pantalla lo diga, no que felicite a nadie.
+    //
+    // Con la clave cargada este tramo se saltea: ahí la subida funciona y lo
+    // que hay que comprobar es lo contrario (ALOJAOS_SUBIDA_ANDA=1).
+    const subidaAnda = process.env.ALOJAOS_SUBIDA_ANDA === '1';
+
+    await page.getByLabel('Elegir el comprobante').setInputFiles({
+      name: 'transferencia.png',
+      mimeType: 'image/png',
+      // Un PNG de 1×1 de verdad: el bucket filtra por tipo, así que un archivo
+      // que no sea una imagen probaría otra cosa.
+      buffer: Buffer.from(
+        '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489' +
+          '0000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082',
+        'hex'
+      ),
+    });
+    await page.waitForTimeout(2500);
+
+    if (subidaAnda) {
+      verificar(
+        (await page.getByText('Lo tenemos.').count()) > 0,
+        'con la subida andando, la pantalla confirma que el sistema lo tiene'
+      );
+    } else {
+      verificar(
+        (await page.getByText('Lo tenemos.').count()) === 0,
+        'con la subida rota, la pantalla NO dice que lo tiene',
+        'es el bug que el sistema anterior tuvo durante meses'
+      );
+      verificar(
+        (await page.getByText(/No pudimos guardar el comprobante/).count()) > 0,
+        'lo dice con un mensaje para una persona, y ofrece WhatsApp'
+      );
+    }
+
+    // Y el estado que guarda la base tiene que coincidir con lo que se mostró.
+    const estado = await page.evaluate(async () => {
+      const id = document.body.innerText.match(/Número de reserva: ([0-9a-f-]{36})/)?.[1];
+      if (!id) return null;
+      const r = await fetch('/api/estado-reserva?id=' + id);
+      return r.ok ? r.json() : null;
+    });
+    if (estado) {
+      verificar(
+        estado.comprobante === subidaAnda,
+        'y la base dice lo mismo que la pantalla',
+        `base: comprobante=${estado.comprobante} · pantalla esperaba ${subidaAnda}`
+      );
+    }
   }
 
   // --- Lo que un visitante no puede ver ------------------------------------
@@ -225,7 +388,13 @@ async function irAlMesAtras(page: Page, etiqueta: string) {
     await page.getByLabel('Mes anterior').click();
     await page.waitForTimeout(40);
   }
-  return false;
+  // No se devuelve `false` para que lo ignore quien llama: 24 toques sin llegar
+  // al mes pedido significa que el calendario no llega hasta ahí, y todo lo que
+  // siga va a fallar por otra razón y en otro lugar.
+  throw new Error(
+    `El calendario no llegó a «${etiqueta}» en 24 toques de «Mes anterior». ` +
+    `Quedó mostrando «${(await page.locator('div.mb-3 > div.text-sm').innerText()).trim()}».`
+  );
 }
 
 main().catch((e) => {

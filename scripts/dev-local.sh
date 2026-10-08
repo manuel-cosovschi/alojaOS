@@ -82,6 +82,47 @@ GRANT anon, authenticated, service_role TO authenticator;
 CREATE SCHEMA auth;
 GRANT USAGE ON SCHEMA auth TO anon, authenticated;
 CREATE TABLE auth.users (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), email TEXT);
+
+-- El esquema de almacenamiento, en lo mínimo que las migraciones tocan: el
+-- registro de buckets, la tabla de objetos con RLS, y `foldername`, que es la
+-- que convierte una ruta en los tramos de los que sale el permiso.
+--
+-- Esto NO reproduce el almacenamiento de Supabase: no sube ni sirve archivos.
+-- Alcanza para que las migraciones se apliquen y para comprobar que las policies
+-- queden escritas como dicen. Que un archivo llegue de verdad lo prueba la
+-- batería de navegador contra un proyecto real.
+CREATE ROLE supabase_storage_admin NOLOGIN;
+CREATE SCHEMA storage AUTHORIZATION supabase_storage_admin;
+GRANT USAGE ON SCHEMA storage TO anon, authenticated, service_role;
+CREATE TABLE storage.buckets (
+  id TEXT PRIMARY KEY, name TEXT, public BOOLEAN DEFAULT false,
+  file_size_limit BIGINT, allowed_mime_types TEXT[]
+);
+CREATE TABLE storage.objects (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bucket_id TEXT REFERENCES storage.buckets(id),
+  name TEXT, owner UUID, created_at TIMESTAMPTZ DEFAULT now()
+);
+-- De `supabase_storage_admin`, como en el proyecto de verdad, y el rol que
+-- corre las migraciones NO es miembro de ese rol. Por eso allá el CREATE POLICY
+-- sobre esta tabla no entra, y por eso acá tampoco tiene que entrar: una base
+-- local más permisiva que la de producción contesta que todo anda y no es
+-- cierto. La prueba que lo vigila está en el bloque 13 de prueba-base.sql.
+ALTER TABLE storage.buckets OWNER TO supabase_storage_admin;
+ALTER TABLE storage.objects OWNER TO supabase_storage_admin;
+-- Los GRANT puestos y RLS prendido: igual que Supabase. Los permisos de tabla
+-- están, y lo que decide es RLS. Sin policies, no pasa nadie.
+GRANT ALL ON storage.buckets, storage.objects TO anon, authenticated, service_role;
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+-- Igual que en Supabase: los tramos de carpeta de una ruta, sin el archivo.
+CREATE FUNCTION storage.foldername(name TEXT) RETURNS TEXT[]
+LANGUAGE plpgsql IMMUTABLE AS \$fn\$
+DECLARE partes TEXT[];
+BEGIN
+  partes := string_to_array(name, '/');
+  RETURN partes[1 : array_length(partes, 1) - 1];
+END;
+\$fn\$;
 -- En Supabase sale del JWT. PostgREST deja los claims en request.jwt.claims.
 CREATE FUNCTION auth.uid() RETURNS UUID LANGUAGE sql STABLE AS \$\$
   SELECT nullif(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
@@ -91,7 +132,19 @@ SQL
 echo "→ migraciones"
 for f in "$RAIZ"/supabase/migrations/*.sql; do
   printf '   %-34s' "$(basename "$f")"
-  $PSQL -d alojaos -q -f "$f" && echo "✓"
+  # Sin el `if`, esto estaba mintiendo. `set -e` NO aborta por el comando de la
+  # izquierda de un `&&`, así que con `$PSQL ... && echo "✓"` una migración que
+  # fallaba imprimía su error y el script seguía a las pruebas como si nada —
+  # que es exactamente la forma de error que este proyecto trata de evitar, en
+  # la herramienta que existe para detectarla. Pasó de verdad con la 011.
+  if ! $PSQL -d alojaos -f "$f" > "$TRABAJO/migracion.log" 2>&1; then
+    echo "✗"
+    echo
+    echo "   La migración falló. Nada de lo que siga sirve, así que no sigo:"
+    sed 's/^/   /' "$TRABAJO/migracion.log"
+    exit 1
+  fi
+  echo "✓"
 done
 
 echo "→ complejo de ejemplo"

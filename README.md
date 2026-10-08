@@ -24,18 +24,23 @@ AlojaOS es un producto de **SOVARE**.
 
 ## Estado
 
-La página de reservas anda: se elige unidad y noches, se ve el precio y queda
-la seña pendiente. Falta el panel del dueño, los comprobantes, los mails y la
-venta del producto.
+La página de reservas anda de punta a punta: se elige unidad y noches, se ve el
+precio, queda la seña pendiente, y el huésped sube el comprobante y **ve que el
+sistema lo tiene**. Falta el panel del dueño, los mails y la venta del producto.
 
 | Listo | Falta |
 |---|---|
-| Esquema multi-inquilino con RLS | El panel del dueño |
-| La restricción que impide la doble reserva | Subir y aprobar el comprobante de la seña |
-| **La página pública de reservas** | Los mails |
-| Cotización por noche, cruzando temporadas | La página comercial y el alta de clientes |
-| Reglas del calendario y días de entrada | El vencimiento programado (hoy corre al leer y al escribir) |
-| 68 pruebas de la base, 110 de las reglas, 23 de navegador | |
+| Esquema multi-inquilino con RLS | El panel del dueño (necesita Auth) |
+| La restricción que impide la doble reserva | Los mails |
+| **La página pública de reservas** | La página comercial y el alta de clientes |
+| **Subir el comprobante de la seña, y comprobar que llegó** | El vencimiento programado (hoy corre al leer y al escribir) |
+| Cotización por noche, cruzando temporadas | Un despliegue (no hay proyecto de Vercel todavía) |
+| Reglas del calendario y días de entrada | |
+| 99 pruebas de la base, 110 de las reglas, 29 de navegador | |
+
+El dueño ya puede aprobar o rechazar una seña: las funciones están y probadas
+(`aprobar_sena`, `rechazar_sena`). Lo que falta es la pantalla, que necesita
+sesión.
 
 ---
 
@@ -229,8 +234,9 @@ perdió**, porque vivía fuera del repositorio.
 
 ### Contra el proyecto de Supabase
 
-El proyecto de AlojaOS existe: `alojaos`, en `sa-east-1`, con las 10 migraciones
-aplicadas. La URL y la clave pública se sacan del dashboard (Project Settings →
+El proyecto de AlojaOS existe: `alojaos`, en `sa-east-1`, con las 12 migraciones
+aplicadas menos un pedazo, que está en `supabase/a_mano/` y se pega a mano (ver
+más abajo). La URL y la clave pública se sacan del dashboard (Project Settings →
 API) y van a `.env.local`; no están en el repositorio, aunque la clave pública
 viaje igual en el navegador.
 
@@ -272,6 +278,53 @@ Eso es a propósito: la página de reservas no tiene sesión. Son SECURITY DEFIN
 y cada una decide adentro qué devuelve — ninguna acepta el estado ni el importe
 de una reserva, ninguna devuelve datos de un huésped, y `crear_reserva` sólo
 puede dejar una seña pendiente.
+
+### Que la base de producción SEA la del repo
+
+`prueba-base.sql` comprueba que las reglas funcionen, contra un Postgres local.
+Eso no contesta la otra pregunta, que es distinta y ya falló: **¿la base de
+producción es la que describen las migraciones?** Un esquema a medio aplicar
+contesta bien a casi todo y mal a una cosa, y esa una cosa aparece el día que un
+huésped la usa.
+
+Para eso está `scripts/verificar-produccion.sql`. Se pega en el SQL Editor del
+proyecto y contesta fila por fila. No escribe nada y no lee datos de nadie: sólo
+el catálogo.
+
+`prueba-local.sh` lo corre también contra la base local, donde tiene que dar
+`ok` en todo. Eso comprueba el verificador: uno con una firma de función mal
+escrita contesta `FALTA` sobre algo que está, y manda a arreglar lo que no está
+roto.
+
+En su primera corrida contra el proyecto de verdad encontró algo que diez
+migraciones y 94 pruebas no habían visto: tres funciones de trigger con
+`EXECUTE` concedido a `PUBLIC`, o sea ejecutables por `anon`.
+
+No es un agujero —una función que devuelve `trigger` no se puede llamar desde
+SQL, y PostgREST no publica funciones con ese tipo de retorno— pero se cerró
+igual (migración 012), por un motivo que sí importa: la prueba local que mira
+"quién puede ejecutar qué" lo hacía **sobre una lista de nombres escrita a
+mano**, y esas tres no estaban en la lista. Una prueba así comprueba la memoria
+de quien la escribió, no la base. Ahora las dos enumeran todo `public`.
+
+### Lo que no se puede aplicar desde acá
+
+`supabase/a_mano/01_reservas_pendientes.sql` hay que pegarlo en el SQL Editor.
+
+El motivo no es del esquema: el conector de Supabase trata cualquier `DROP` como
+destructivo y pide que una persona lo confirme, y esa confirmación no llega a
+ningún lado en una sesión sin interfaz. La llamada se queda esperando y se corta
+a los 60 segundos **sin hacer nada**. Lo comprobé con un `DROP FUNCTION IF
+EXISTS` de una función inexistente: también se cuelga, y mientras tanto la base
+no tiene nada bloqueado ni esperando un lock.
+
+Lo que queda pendiente es una sola función, `reservas_pendientes()`, que necesita
+dos columnas de salida más y por eso va con `DROP` (Postgres no deja cambiar el
+tipo de retorno de una función existente). Hoy nada la llama: la usaría el panel
+del dueño, que no está escrito.
+
+Después de pegarlo, `verificar-produccion.sql` tiene que pasar la fila 59 de
+`FALTA` a `ok`.
 
 ---
 
