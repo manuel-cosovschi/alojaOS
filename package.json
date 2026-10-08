@@ -19,7 +19,8 @@
     "prueba:navegador": "tsx scripts/prueba-navegador.mts",
     "prueba:panel": "tsx scripts/prueba-panel.mts",
     "prueba:duenos": "tsx scripts/prueba-dos-duenos.mts",
-    "prueba:clave-rota": "./scripts/prueba-clave-rota.sh"
+    "prueba:clave-rota": "./scripts/prueba-clave-rota.sh",
+    "prueba:despliegue": "tsx scripts/prueba-despliegue.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

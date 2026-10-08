@@ -24,9 +24,12 @@ AlojaOS es un producto de **SOVARE**.
 
 ## Estado
 
-La página de reservas anda de punta a punta: se elige unidad y noches, se ve el
-precio, queda la seña pendiente, y el huésped sube el comprobante y **ve que el
-sistema lo tiene**. Falta el panel del dueño, los mails y la venta del producto.
+El sistema anda de punta a punta y está desplegado en
+**https://alojaos.vercel.app**: el huésped elige unidad y noches, ve el precio,
+deja la seña, sube el comprobante y **ve que el sistema lo tiene**; el dueño
+entra al panel y la confirma o la rechaza.
+
+Falta lo de afuera: el dominio y la clave del proveedor de mail.
 
 | Listo | Falta |
 |---|---|
@@ -38,6 +41,7 @@ sistema lo tiene**. Falta el panel del dueño, los mails y la venta del producto
 | **El vencimiento corre solo, y el panel dice si no** | |
 | **La página comercial** | |
 | **Los avisos por mail, y el registro de los que no salieron** | |
+| **Desplegado y probado contra el despliegue** | |
 | Cotización por noche, cruzando temporadas | |
 | Reglas del calendario y días de entrada | |
 
@@ -45,6 +49,13 @@ Los mails están escritos y conectados; lo que falta es la clave del proveedor.
 Mientras no esté, **no se pierde nada en silencio**: cada reserva deja un aviso
 en estado `SIN_CONFIGURAR` y el panel le muestra al dueño a qué huésped tiene
 que escribirle él.
+
+Las **páginas de los complejos** son lo único que el despliegue todavía no
+sirve, y el motivo es el dominio: cada complejo vive en
+`sucomplejo.alojaos.shop` y `vercel.app` no admite comodín. El panel, el login y
+la página comercial andan; `tucomplejo.alojaos.vercel.app` no resuelve y no
+puede resolver. Hasta que el dominio esté, las páginas de reservas se prueban en
+local (`npm run dev:local` o `next start` con `NEXT_PUBLIC_ROOT_DOMAIN`).
 
 ---
 
@@ -209,6 +220,40 @@ npm run db:test # las migraciones y la base, contra un Postgres de verdad
 `npm run db:test` necesita Postgres 16 o superior con `btree_gist`
 (`postgresql-contrib`). Levanta un cluster al momento, aplica las migraciones,
 corre las pruebas y lo tira. No toca ningún Supabase.
+
+Todo lo que hay para correr, y qué contesta cada cosa:
+
+| Qué | Cuántas | Contra qué |
+|---|---|---|
+| `npm run db:test` — migraciones, reglas, permisos, dos escrituras simultáneas | 108 | un Postgres al momento |
+| `npm test` — fechas, precios, calendario, temporadas, subdominios, marca | 110 | nada, es puro código |
+| `npm run prueba:navegador` — el flujo del huésped, en Chromium | 33 | el sitio levantado |
+| `npm run prueba:panel` — el flujo del dueño, en Chromium | 23 | el sitio + Supabase |
+| `npm run prueba:duenos` — dos dueños logueados, aislamiento real | 18 | Supabase |
+| `npm run aislamiento` — qué puede un visitante, y qué el servidor | 25 | Supabase |
+| `npm run prueba:clave-rota` — que el panel avise si no puede guardar comprobantes | 2 | el sitio, con una clave inventada |
+| `npm run prueba:despliegue` — el sitio desplegado, en Chromium | 12 | el despliegue |
+| `scripts/verificar-produccion.sql` — si la base de producción es la del repo | 54 | Supabase |
+
+Las que piden Supabase necesitan `.env.local` y el complejo de ejemplo sembrado
+(`npx tsx scripts/sembrar-demo.mts`). Las dos primeras corren en cualquier
+máquina sin tocar nada de nadie.
+
+### Por qué hay una batería contra el despliegue
+
+Porque hay cosas que sólo pueden fallar allá, y en local andan perfecto:
+
+  - las cookies de sesión son `Secure` y el middleware corre en el edge, no en
+    Node. Si la sesión se rompiera por eso, el panel andaría acá y mandaría al
+    login en producción;
+  - las variables de entorno las puso Vercel. Una que falte no se nota en local;
+  - y el despliegue puede quedar detrás de la protección de Vercel, que contesta
+    un 302 al login de Vercel. Para un huésped eso es una pared, y es la clase
+    de cosa que se descubre cuando un cliente avisa que su página no abre. Pasó
+    acá: los proyectos nuevos vienen con la protección puesta para todo, y hubo
+    que dejarla sólo para preview.
+
+Un build que compila no es una función que anda.
 
 ### Tocar el producto sin tener Supabase
 

@@ -185,6 +185,43 @@ WITH esperado(orden, que, existe) AS (
        (SELECT n.nspname <> 'public' FROM pg_extension e
           JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'btree_gist')),
 
+  -- --- Los avisos al huésped (014) ----------------------------------------
+  (61, 'la tabla avisos existe',
+       (SELECT count(*) = 1 FROM pg_class
+         WHERE relname='avisos' AND relnamespace='public'::regnamespace)),
+  (62, 'avisos tiene RLS prendido',
+       (SELECT relrowsecurity FROM pg_class
+         WHERE relname='avisos' AND relnamespace='public'::regnamespace)),
+  -- Un aviso por tipo y por reserva. Sin esto, reintentar agrega filas en vez
+  -- de actualizar la que hay, y la lista de «a quién no le llegó» se llena de
+  -- repetidos del mismo huésped.
+  (63, 'un aviso por tipo y por reserva',
+       (SELECT count(*) = 1 FROM pg_constraint WHERE conname='un_aviso_por_tipo')),
+  -- Un FALLO sin motivo es media verdad, y media verdad acá es «parece que
+  -- salió».
+  (64, 'un aviso que falló no puede quedar sin motivo',
+       (SELECT count(*) = 1 FROM pg_constraint WHERE conname='fallo_con_motivo')),
+  (65, 'anotar_aviso() existe y es sólo del servidor',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='anotar_aviso' AND pronamespace='public'::regnamespace)
+        AND has_function_privilege('service_role', 'public.anotar_aviso(uuid,text,text,text,text,text)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.anotar_aviso(uuid,text,text,text,text,text)', 'EXECUTE')
+        AND NOT has_function_privilege('authenticated', 'public.anotar_aviso(uuid,text,text,text,text,text)', 'EXECUTE')),
+  -- `datos_del_aviso()` devuelve el nombre, el mail y el teléfono de una
+  -- persona para armar el mail. Si `anon` pudiera llamarla, un id de reserva
+  -- adivinado sacaría los datos de su huésped.
+  (66, 'datos_del_aviso() NO la puede llamar nadie más que el servidor',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='datos_del_aviso' AND pronamespace='public'::regnamespace)
+        AND has_function_privilege('service_role', 'public.datos_del_aviso(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.datos_del_aviso(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('authenticated', 'public.datos_del_aviso(uuid)', 'EXECUTE')),
+  (67, 'avisos_que_no_salieron() existe, para el panel',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='avisos_que_no_salieron' AND pronamespace='public'::regnamespace)
+        AND has_function_privilege('authenticated', 'public.avisos_que_no_salieron(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.avisos_que_no_salieron(uuid)', 'EXECUTE')),
+
   -- --- El reloj del vencimiento -------------------------------------------
   -- La 013 programa un job de pg_cron para que una seña venza sin que nadie
   -- entre a la página. Estas tres filas se escriben condicionadas a que pg_cron
