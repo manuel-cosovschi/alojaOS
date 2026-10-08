@@ -4,6 +4,7 @@ import { misComplejos, senasPendientes, saludDelVencimiento } from '@/lib/panel'
 import { Senas } from '@/components/Senas';
 import { SaludDelReloj } from '@/components/SaludDelReloj';
 import { salir } from '@/actions/sesion';
+import { direccionDelComplejo } from '@/lib/tenant';
 
 /**
  * El panel del dueño.
@@ -60,14 +61,24 @@ export default async function Panel() {
               <section key={complejo.id}>
                 <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
                   <h2 className="text-lg font-semibold">{complejo.nombre}</h2>
+                  {/* La página pública vive en el subdominio del complejo, no
+                      acá, así que el enlace tiene que ser absoluto. Lo arma
+                      `direccionDelComplejo()`, que es la misma función que va a
+                      armar la dirección que el dueño mande por mensaje: si
+                      alguna vez el dominio cambia, cambia en un solo lugar.
+
+                      Antes esto era `href={`/${complejo.slug}`}`, una ruta que
+                      no existe: llevaba a un 404. Es la clase de error que no
+                      aparece en ninguna prueba de la base ni del navegador del
+                      huésped, porque vive en una pantalla que hasta hoy no
+                      estaba. */}
                   <a
                     className="text-sm underline opacity-70"
-                    href={`/${complejo.slug}`}
-                    // La página pública vive en el subdominio del complejo, no
-                    // acá. El enlace se arma con el slug para que el dueño
-                    // pueda ver lo que ve un huésped.
+                    href={direccionDelComplejo(complejo.slug)}
+                    target="_blank"
+                    rel="noopener"
                   >
-                    ver la página de reservas
+                    ver la página de reservas ↗
                   </a>
                 </div>
 

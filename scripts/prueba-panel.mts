@@ -210,6 +210,32 @@ async function main() {
       'y nada del complejo de otro dueño'
     );
 
+    // El enlace a la página pública. Tiene que ser absoluto y al subdominio del
+    // complejo: la página pública NO vive en el dominio del panel. Antes era
+    // `/cabanias-del-sol`, una ruta que no existe, y llevaba a un 404. Un
+    // enlace roto en el panel no lo agarra ninguna prueba de la base.
+    {
+      const enlace = page.getByRole('link', { name: /ver la página de reservas/ }).first();
+      const href = (await enlace.getAttribute('href')) ?? '';
+      verificar(
+        /^https?:\/\/cabanias-del-sol\./.test(href),
+        'el enlace a la página de reservas apunta al subdominio del complejo',
+        `href = ${href}`
+      );
+      // Se abre en una pestaña y no con `page.request.get`: el pedido de
+      // `request` sale de Node y no pasa por el resolvedor del navegador, así
+      // que `*.alojaos.test` no existe para él. Navegando, sí: es el mismo
+      // camino que hace un dueño cuando clickea.
+      const otra = await contexto.newPage();
+      const res = await otra.goto(href, { waitUntil: 'domcontentloaded' });
+      verificar(
+        res?.status() === 200 && (await otra.content()).includes('Cabañas del Sol'),
+        'y ese enlace abre la página del complejo',
+        `HTTP ${res?.status()}`
+      );
+      await otra.close();
+    }
+
     // --- 3. Confirmar confirma de verdad ----------------------------------
     // Apuntando a LA fila de esta prueba y no a `.first()`. Con `.first()` la
     // prueba confirmaba la primera reserva de la lista, que puede ser de otra

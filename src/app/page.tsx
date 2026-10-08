@@ -2,6 +2,7 @@ import { leerComplejo, nochesOcupadas, slugDeLaPeticion } from '@/lib/complejo';
 import { hoyISO } from '@/lib/fechas';
 import { Reservar } from '@/components/Reservar';
 import { datosParaTransferir } from '@/actions/comprobante';
+import { Comercial } from '@/components/Comercial';
 
 /**
  * La raíz.
@@ -18,7 +19,7 @@ export const dynamic = 'force-dynamic';
 export default async function Pagina() {
   const slug = await slugDeLaPeticion();
 
-  if (!slug) return <PaginaPrincipal />;
+  if (!slug) return <Comercial />;
 
   const complejo = await leerComplejo(slug);
   if (!complejo) return <NoExiste slug={slug} />;
@@ -122,14 +123,4 @@ function NoExiste({ slug }: { slug: string }) {
   );
 }
 
-function PaginaPrincipal() {
-  return (
-    <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6">
-      <h1 className="text-2xl font-semibold">AlojaOS</h1>
-      <p className="mt-2 text-sm opacity-70">
-        El sistema de reservas de tu complejo. La página comercial todavía no está
-        construida; cada complejo atiende en su propia dirección.
-      </p>
-    </main>
-  );
-}
+
