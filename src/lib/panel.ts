@@ -36,6 +36,19 @@ export interface SenaPendiente {
   comprobante_subido_el: string | null;
 }
 
+export interface AvisoQueNoSalio {
+  reserva_id: string;
+  tipo: string;
+  estado: string;
+  error: string | null;
+  intentos: number;
+  huesped_nombre: string | null;
+  huesped_telefono: string | null;
+  huesped_email: string | null;
+  check_in: string;
+  cuando: string;
+}
+
 export interface SaludDelVencimiento {
   atrasadas: number;
   esperando: number;
@@ -92,4 +105,27 @@ export async function saludDelVencimiento(): Promise<SaludDelVencimiento | null>
     return null;
   }
   return data as SaludDelVencimiento;
+}
+
+/**
+ * A qué huésped no le llegó su aviso.
+ *
+ * Esto es lo que convierte un mail perdido en algo que alguien puede arreglar.
+ * Sin esta lista, un proveedor que empieza a rechazar todo se nota cuando un
+ * huésped se queja —que puede ser nunca, porque el que no recibió el mail no
+ * sabe que tenía que recibirlo—.
+ *
+ * Incluye las reservas que NO tienen ninguna fila de aviso, no sólo las que
+ * fallaron: para el huésped «no se intentó» y «falló» son lo mismo. La función
+ * de la base lo hace con un LEFT JOIN desde `reservas`.
+ */
+export async function avisosQueNoSalieron(complejoId: string): Promise<AvisoQueNoSalio[]> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('avisos_que_no_salieron', { p_complejo: complejoId });
+
+  if (error) {
+    console.error('[avisosQueNoSalieron] la base devolvió un error:', error.message);
+    return [];
+  }
+  return (data ?? []) as AvisoQueNoSalio[];
 }

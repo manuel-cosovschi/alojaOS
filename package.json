@@ -18,7 +18,8 @@
     "dev:local": "./scripts/dev-local.sh",
     "prueba:navegador": "tsx scripts/prueba-navegador.mts",
     "prueba:panel": "tsx scripts/prueba-panel.mts",
-    "prueba:duenos": "tsx scripts/prueba-dos-duenos.mts"
+    "prueba:duenos": "tsx scripts/prueba-dos-duenos.mts",
+    "prueba:clave-rota": "./scripts/prueba-clave-rota.sh"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

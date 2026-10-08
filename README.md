@@ -30,14 +30,21 @@ sistema lo tiene**. Falta el panel del dueño, los mails y la venta del producto
 
 | Listo | Falta |
 |---|---|
-| Esquema multi-inquilino con RLS, probado con dos dueños | Los mails |
-| La restricción que impide la doble reserva | La página comercial y el alta de clientes |
-| **La página pública de reservas** | Un despliegue (no hay proyecto de Vercel todavía) |
+| Esquema multi-inquilino con RLS, probado con dos dueños | El dominio `alojaos.shop` (está libre, hay que registrarlo) |
+| La restricción que impide la doble reserva | La clave de Resend, para que los mails salgan |
+| **La página pública de reservas** | El alta de clientes desde el panel |
 | **Subir el comprobante de la seña, y comprobar que llegó** | Editar precios y calendario desde el panel |
 | **El panel del dueño: ver, confirmar y rechazar señas** | |
 | **El vencimiento corre solo, y el panel dice si no** | |
+| **La página comercial** | |
+| **Los avisos por mail, y el registro de los que no salieron** | |
 | Cotización por noche, cruzando temporadas | |
 | Reglas del calendario y días de entrada | |
+
+Los mails están escritos y conectados; lo que falta es la clave del proveedor.
+Mientras no esté, **no se pierde nada en silencio**: cada reserva deja un aviso
+en estado `SIN_CONFIGURAR` y el panel le muestra al dueño a qué huésped tiene
+que escribirle él.
 
 ---
 

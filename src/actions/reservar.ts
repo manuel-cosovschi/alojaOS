@@ -16,6 +16,7 @@
  */
 
 import { clienteServidor } from '@/lib/supabase/servidor';
+import { programarAviso } from '@/actions/avisar';
 
 export interface Pedido {
   slug: string;
@@ -89,6 +90,11 @@ export async function pedirReserva(pedido: Pedido): Promise<Resultado> {
   }
 
   if (r.ok === true) {
+    // El mail sale después de contestarle al navegador: el huésped no tiene que
+    // esperar a un proveedor para ver que su reserva quedó. Si no sale, la
+    // reserva no se toca y el panel se lo dice al dueño.
+    await programarAviso(String(r.id), 'sena_pendiente');
+
     return {
       ok: true,
       id: String(r.id),

@@ -381,6 +381,63 @@ async function main() {
       );
     }
 
+    // --- El aviso por mail ------------------------------------------------
+    // Hoy no hay proveedor de mail configurado, así que el aviso NO sale. Lo
+    // que tiene que pasar es que quede anotado por qué, y nunca que figure
+    // como enviado.
+    //
+    // Se comprueba acá y no en la batería del panel porque acá la reserva se
+    // hizo pasando por el formulario, que es lo único que ejercita el código
+    // que manda el aviso. Una fila escrita directo en la base no prueba nada
+    // del envío.
+    //
+    // Pide la clave de servicio: `avisos` no la lee nadie sin sesión, y está
+    // bien que no. Sin clave, este tramo se saltea y lo dice.
+    {
+      const urlSupa = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? delEnv('NEXT_PUBLIC_SUPABASE_URL')).replace(/\/$/, '');
+      const servicio = process.env.SUPABASE_SERVICE_ROLE_KEY ?? delEnv('SUPABASE_SERVICE_ROLE_KEY');
+      const idReserva = (await page.locator('body').innerText()).match(
+        /Número de reserva: ([0-9a-f-]{36})/
+      )?.[1];
+
+      if (!/supabase\.co/.test(urlSupa) || !servicio || !idReserva) {
+        console.log(
+          'OMITO  el aviso por mail: hace falta un proyecto Supabase y la clave de servicio'
+        );
+      } else {
+        // El aviso sale DESPUÉS de contestarle al navegador, así que hay que
+        // darle tiempo. Si no apareciera, la prueba lo dice en vez de suponer
+        // que tardó: una reserva sin fila de aviso es una reserva de la que el
+        // huésped no se enteró.
+        let aviso: { estado: string; error: string | null; destino: string | null } | undefined;
+        for (let i = 0; i < 12 && !aviso; i += 1) {
+          await page.waitForTimeout(500);
+          const res = await fetch(
+            `${urlSupa}/rest/v1/avisos?reserva_id=eq.${idReserva}&select=estado,error,destino`,
+            { headers: { apikey: servicio, Authorization: `Bearer ${servicio}` } }
+          );
+          if (res.ok) [aviso] = (await res.json()) as typeof aviso extends undefined ? never[] : Array<NonNullable<typeof aviso>>;
+        }
+
+        verificar(!!aviso, 'reservar deja anotado el intento de aviso por mail');
+        verificar(
+          aviso?.estado !== 'ENVIADO',
+          'y sin proveedor de mail NO figura como enviado',
+          `quedó en ${aviso?.estado}`
+        );
+        verificar(
+          aviso?.estado === 'SIN_CONFIGURAR' && !!aviso?.error,
+          'figura como SIN_CONFIGURAR, con el motivo escrito',
+          `${aviso?.estado}: ${aviso?.error}`
+        );
+        verificar(
+          aviso?.destino === 'prueba@ejemplo.test',
+          'y con la dirección a la que se habría mandado',
+          `destino = ${aviso?.destino}`
+        );
+      }
+    }
+
     // Y el estado que guarda la base tiene que coincidir con lo que se mostró.
     const estado = await page.evaluate(async () => {
       const id = document.body.innerText.match(/Número de reserva: ([0-9a-f-]{36})/)?.[1];

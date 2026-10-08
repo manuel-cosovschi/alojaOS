@@ -31,6 +31,7 @@
 
 import { clienteConSesion } from '@/lib/supabase/sesion';
 import { BUCKET_COMPROBANTES, clienteServicio } from '@/lib/supabase/servicio';
+import { programarAviso } from '@/actions/avisar';
 
 export type Resultado = { ok: true; mensaje: string } | { ok: false; mensaje: string };
 
@@ -49,6 +50,12 @@ export async function aprobar(reservaId: string): Promise<Resultado> {
   const r = (data ?? {}) as Record<string, unknown>;
   if (r.ok !== true) {
     return { ok: false, mensaje: motivoLegible(r) };
+  }
+
+  // Sólo si esta llamada la confirmó. Repetir el aviso porque el dueño apretó
+  // dos veces le mandaría dos mails a la misma persona.
+  if (r.ya_estaba !== true) {
+    await programarAviso(reservaId, 'reserva_confirmada');
   }
 
   return {
@@ -71,6 +78,8 @@ export async function rechazar(reservaId: string, motivo: string): Promise<Resul
 
   const r = (data ?? {}) as Record<string, unknown>;
   if (r.ok !== true) return { ok: false, mensaje: motivoLegible(r) };
+
+  await programarAviso(reservaId, 'sena_rechazada');
 
   return { ok: true, mensaje: 'Rechazada. Las noches quedaron libres.' };
 }

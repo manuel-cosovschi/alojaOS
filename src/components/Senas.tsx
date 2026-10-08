@@ -46,7 +46,12 @@ export function Senas({
   }
 
   return (
-    <ul className="space-y-3">
+    // Con nombre: hay dos listas en esta pantalla —las señas y los huéspedes a
+    // los que no les llegó el mail— y las dos tienen nombres de personas
+    // adentro. Para quien usa un lector de pantalla eso es la diferencia entre
+    // dos listas y una sopa, y para las pruebas es la diferencia entre apuntar
+    // a la fila correcta y apuntar a la primera que coincida.
+    <ul aria-label="Señas que esperan revisión" className="space-y-3">
       {senas.map((s) => (
         <Sena key={s.id} sena={s} moneda={moneda} zonaHoraria={zonaHoraria} />
       ))}

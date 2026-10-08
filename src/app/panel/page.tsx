@@ -1,8 +1,11 @@
 import { redirect } from 'next/navigation';
 import { usuarioActual } from '@/lib/supabase/sesion';
-import { misComplejos, senasPendientes, saludDelVencimiento } from '@/lib/panel';
+import { misComplejos, senasPendientes, saludDelVencimiento, avisosQueNoSalieron } from '@/lib/panel';
 import { Senas } from '@/components/Senas';
 import { SaludDelReloj } from '@/components/SaludDelReloj';
+import { SaludDelComprobante } from '@/components/SaludDelComprobante';
+import { AvisosQueNoSalieron } from '@/components/AvisosQueNoSalieron';
+import { saludDelComprobante } from '@/lib/salud';
 import { salir } from '@/actions/sesion';
 import { direccionDelComplejo } from '@/lib/tenant';
 
@@ -26,12 +29,20 @@ export default async function Panel() {
   if (!usuario) redirect('/login');
 
   const complejos = await misComplejos();
-  const salud = await saludDelVencimiento();
+  // Las dos en paralelo: una pregunta a la base y la otra al almacenamiento, y
+  // no dependen entre sí.
+  const [salud, saludComprobante] = await Promise.all([
+    saludDelVencimiento(),
+    saludDelComprobante(),
+  ]);
 
   // Las señas de cada complejo, en paralelo: son consultas independientes y
   // esperarlas en fila haría que un dueño con tres complejos espere el triple.
   const porComplejo = await Promise.all(
-    complejos.map(async (c) => ({ complejo: c, senas: await senasPendientes(c.id) }))
+    complejos.map(async (c) => {
+      const [senas, avisos] = await Promise.all([senasPendientes(c.id), avisosQueNoSalieron(c.id)]);
+      return { complejo: c, senas, avisos };
+    })
   );
 
   return (
@@ -55,9 +66,10 @@ export default async function Panel() {
           <SinComplejos />
         ) : (
           <>
+            <SaludDelComprobante salud={saludComprobante} />
             {salud && <SaludDelReloj salud={salud} />}
 
-            {porComplejo.map(({ complejo, senas }) => (
+            {porComplejo.map(({ complejo, senas, avisos }) => (
               <section key={complejo.id}>
                 <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
                   <h2 className="text-lg font-semibold">{complejo.nombre}</h2>
@@ -83,6 +95,10 @@ export default async function Panel() {
                 </div>
 
                 {!complejo.datos_transferencia && <SinDatosBancarios slug={complejo.slug} />}
+
+                <div className="mb-3">
+                  <AvisosQueNoSalieron avisos={avisos} zonaHoraria={complejo.zona_horaria} />
+                </div>
 
                 <Senas
                   senas={senas}

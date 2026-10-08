@@ -237,12 +237,20 @@ async function main() {
     }
 
     // --- 3. Confirmar confirma de verdad ----------------------------------
-    // Apuntando a LA fila de esta prueba y no a `.first()`. Con `.first()` la
+    // Apuntando a LA fila de esta prueba, dentro de LA lista que corresponde.
+    //
+    // Dos cosas que ya fallaron y por eso está así. Primero fue `.first()`: la
     // prueba confirmaba la primera reserva de la lista, que puede ser de otra
     // batería o de una reserva real, y después comprobaba en la base la de ella
     // —que seguía pendiente— y reportaba que confirmar no funciona. Una prueba
     // que toca lo que no es su caso no falla: miente.
-    const fila = page.locator('li').filter({ hasText: HUESPED });
+    //
+    // Después fue `locator('li')` sin más: el panel tiene DOS listas con
+    // nombres de personas —las señas y los huéspedes a los que no les llegó el
+    // mail— así que el mismo nombre aparecía dos veces y el filtro agarraba las
+    // dos. Las listas tienen nombre, y acá se usa.
+    const senas = page.getByRole('list', { name: 'Señas que esperan revisión' });
+    const fila = senas.locator('li').filter({ hasText: HUESPED });
     verificar(await fila.count() === 1, 'la seña de esta prueba está en la lista una sola vez',
       `encontré ${await fila.count()}`);
     await fila.getByRole('button', { name: 'Confirmar la reserva' }).click();
@@ -262,8 +270,8 @@ async function main() {
       `vence_el = ${despuesDeAprobar.vence_el}`
     );
     verificar(
-      !(await page.content()).includes(HUESPED),
-      'y desaparece de la lista de pendientes'
+      (await senas.locator('li').filter({ hasText: HUESPED }).count()) === 0,
+      'y desaparece de la lista de señas pendientes'
     );
 
     // --- 4. Rechazar libera las noches ------------------------------------
@@ -279,7 +287,7 @@ async function main() {
     const idParaRechazar = await senaDePrueba(false, NOCHES_A_RECHAZAR);
     await page.reload({ waitUntil: 'domcontentloaded' });
 
-    const filaSinComprobante = page.locator('li').filter({ hasText: HUESPED });
+    const filaSinComprobante = senas.locator('li').filter({ hasText: HUESPED });
     verificar(
       (await filaSinComprobante.getByText(/Sin comprobante/).count()) > 0,
       'una seña sin comprobante lo dice'
@@ -322,7 +330,48 @@ async function main() {
       'y las noches quedan libres de verdad, no sólo en la pantalla'
     );
 
-    // --- 5. Salir ---------------------------------------------------------
+    // --- 5. El panel avisa si no puede guardar comprobantes ---------------
+    // Con la clave buena no tiene que haber ningún cartel. Y con una clave
+    // rota, sí: eso se prueba abajo, levantando el sitio con una clave
+    // inventada, porque es la única forma de saber que el cartel aparece.
+    verificar(
+      (await page.content()).includes('no podemos guardar comprobantes') === false,
+      'con la clave de servicio buena, el panel no avisa nada de comprobantes'
+    );
+
+    // --- 6. El mail que no salió ------------------------------------------
+    // Hoy no hay proveedor de mail configurado, así que NINGÚN aviso sale. Lo
+    // que se prueba es que eso quede anotado y que el panel lo muestre, porque
+    // la alternativa —que no quede rastro— es que el huésped no reciba nada y
+    // el dueño no se entere nunca. Es el mismo bug del comprobante, de vuelta.
+    {
+      const idSinAviso = await senaDePrueba(false, ['2027-04-20', '2027-04-24']);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const texto = await page.locator('body').innerText();
+
+      verificar(
+        /no le llegó el mail|no les llegó el mail/.test(texto),
+        'el panel dice que a un huésped no le llegó el mail',
+        texto.split('\n').find((l) => l.includes('mail')) ?? '(no encontré la línea)'
+      );
+      verificar(
+        texto.includes('falta avisarle dónde transferir'),
+        'y dice qué le falta avisarle'
+      );
+      // Esta reserva se escribió directo en la base, sin pasar por la página,
+      // así que no tiene ninguna fila de aviso. Aparecer igual es la prueba de
+      // que «no se intentó» cuenta como «no llegó».
+      const avisos = await base<Array<{ estado: string }>>(
+        `avisos?reserva_id=eq.${idSinAviso}&select=estado`
+      );
+      verificar(
+        avisos.length === 0,
+        'y aparece aunque no exista ninguna fila de aviso (no se intentó nunca)',
+        `encontré ${avisos.length} filas`
+      );
+    }
+
+    // --- 7. Salir ---------------------------------------------------------
     await page.goto(`${BASE}/salir`, { waitUntil: 'domcontentloaded' });
     verificar(page.url().includes('/login'), 'salir vuelve al login', page.url());
     await page.goto(`${BASE}/panel`, { waitUntil: 'domcontentloaded' });
