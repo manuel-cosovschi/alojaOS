@@ -30,17 +30,14 @@ sistema lo tiene**. Falta el panel del dueño, los mails y la venta del producto
 
 | Listo | Falta |
 |---|---|
-| Esquema multi-inquilino con RLS | El panel del dueño (necesita Auth) |
-| La restricción que impide la doble reserva | Los mails |
-| **La página pública de reservas** | La página comercial y el alta de clientes |
-| **Subir el comprobante de la seña, y comprobar que llegó** | El vencimiento programado (hoy corre al leer y al escribir) |
-| Cotización por noche, cruzando temporadas | Un despliegue (no hay proyecto de Vercel todavía) |
+| Esquema multi-inquilino con RLS, probado con dos dueños | Los mails |
+| La restricción que impide la doble reserva | La página comercial y el alta de clientes |
+| **La página pública de reservas** | Un despliegue (no hay proyecto de Vercel todavía) |
+| **Subir el comprobante de la seña, y comprobar que llegó** | Editar precios y calendario desde el panel |
+| **El panel del dueño: ver, confirmar y rechazar señas** | |
+| **El vencimiento corre solo, y el panel dice si no** | |
+| Cotización por noche, cruzando temporadas | |
 | Reglas del calendario y días de entrada | |
-| 102 pruebas de la base, 110 de las reglas, 29 de navegador | |
-
-El dueño ya puede aprobar o rechazar una seña: las funciones están y probadas
-(`aprobar_sena`, `rechazar_sena`). Lo que falta es la pantalla, que necesita
-sesión.
 
 ---
 
@@ -234,19 +231,63 @@ perdió**, porque vivía fuera del repositorio.
 
 ### Contra el proyecto de Supabase
 
-El proyecto de AlojaOS existe: `alojaos`, en `sa-east-1`, con las 12 migraciones
-aplicadas y `verificar-produccion.sql` dando 43 de 43. La URL y la clave pública se sacan del dashboard (Project Settings →
-API) y van a `.env.local`; no están en el repositorio, aunque la clave pública
-viaje igual en el navegador.
+El proyecto de AlojaOS existe: `alojaos`, en `sa-east-1`, con las 13 migraciones
+aplicadas y `verificar-produccion.sql` dando 47 de 47. La URL y las claves se
+sacan del dashboard (Project Settings → API Keys) y van a `.env.local`; no están
+en el repositorio.
 
 ```bash
-cp .env.example .env.local   # completá URL y claves
-npm run db:migrate
-npm run aislamiento
+cp .env.example .env.local        # URL, clave publicable y clave de servicio
+npx tsx scripts/sembrar-demo.mts  # los dos dueños de ejemplo
+npm run aislamiento               # qué puede un visitante, y qué el servidor
+npm run build && npm start
+
+ALOJAOS_SUBIDA_ANDA=1 npm run prueba:navegador   # el huésped, con el comprobante
+npm run prueba:panel                             # el dueño
+npm run prueba:duenos                            # dos dueños, aislamiento real
 ```
+
+`sembrar-demo.mts` crea los dos usuarios por la API de Auth y deja sus
+contraseñas en `.alojaos-demo.json` (0600, ignorado por git). El SQL del
+complejo está en `scripts/ejemplo.sql` y el del vecino en
+`scripts/ejemplo-vecino.sql`; los dos piden el id del dueño en un ajuste de
+sesión, que el script imprime.
+
+Hay **dos** claves y hacen cosas distintas. La publicable viaja en el navegador
+de cualquiera y está bien que viaje: lo que puede hacer lo decide RLS. La de
+servicio saltea RLS entera, y la necesitan dos cosas: guardar el comprobante
+—el huésped no tiene cuenta, así que no puede escribir el bucket él mismo— y
+firmar la URL con la que el dueño lo mira. Nunca en una variable `NEXT_PUBLIC_`.
 
 Ojo: `npm run dev:local` **sobreescribe** `.env.local` apuntando al Postgres de
 al lado. Si venías trabajando contra Supabase, guardate una copia.
+
+### Dos dueños, que es la prueba que decide si esto se vende
+
+`npm run aislamiento` comprueba qué puede un visitante sin cuenta. No cubre el
+caso que importa en un multi-inquilino: **un cliente pago, logueado, con un token
+válido, pidiendo los datos del otro.**
+
+`npm run prueba:duenos` entra con dos contraseñas de verdad y pide lo ajeno por
+los tres caminos que existen, porque cada uno se cierra distinto y cerrar dos de
+tres no sirve:
+
+| Camino | Qué lo protege |
+|---|---|
+| Las tablas por REST | RLS, con `es_miembro()` en la policy |
+| Las funciones del panel | el `es_miembro()` de adentro — son SECURITY DEFINER, RLS no las frena |
+| Escribir: aprobar y rechazar la seña de otro | lo mismo, y es lo que convierte una filtración en un daño |
+
+Y pide con el **id real** de la reserva del vecino, no con uno inventado: un id
+inexistente contesta «no existe» por el motivo equivocado y la prueba pasaría
+sin haber probado nada.
+
+La última sección prueba lo contrario, y sin ella las 14 anteriores no valen:
+que cada dueño **sí** vea lo suyo. Una policy que no deja ver nada pasa todas las
+pruebas de filtración.
+
+Esto no se puede comprobar leyendo las policies. `es_miembro(complejo_id)` se lee
+bien; también se leería bien con un `OR true` que alguien dejó probando algo.
 
 ### Lo que apareció al aplicarlo en Supabase de verdad
 

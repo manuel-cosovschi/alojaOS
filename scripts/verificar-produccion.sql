@@ -185,6 +185,29 @@ WITH esperado(orden, que, existe) AS (
        (SELECT n.nspname <> 'public' FROM pg_extension e
           JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'btree_gist')),
 
+  -- --- El reloj del vencimiento -------------------------------------------
+  -- La 013 programa un job de pg_cron para que una seña venza sin que nadie
+  -- entre a la página. Estas tres filas se escriben condicionadas a que pg_cron
+  -- exista, porque el Postgres del arnés no lo tiene y este archivo corre
+  -- también ahí. Donde hay pg_cron —producción— exigen lo que tienen que exigir.
+  (83, 'donde hay pg_cron, está instalada',
+       (SELECT NOT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name='pg_cron')
+            OR EXISTS (SELECT 1 FROM pg_extension WHERE extname='pg_cron'))),
+  (84, 'y el job de vencimientos está programado y activo',
+       (SELECT NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname='pg_cron')
+            OR (public.salud_del_vencimiento()->>'mecanismo') = 'cron')),
+  -- Que el job exista no es que corra. Esta fila es la que lo separa, y es la
+  -- que se va a poner en rojo el día que pg_cron se quede quieto.
+  (85, 'y corrió hace menos de 20 minutos',
+       (SELECT NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname='pg_cron')
+            OR NOT (public.salud_del_vencimiento()->>'nunca_corrio')::boolean)),
+
+  -- Y el número que no depende de ningún mecanismo: señas que ya tendrían que
+  -- estar vencidas y siguen ocupando noches. Si esto falla, el reloj está
+  -- muerto, sea cual sea, y hay un complejo con una cabaña bloqueada de gratis.
+  (86, 'ninguna seña vencida sigue ocupando noches',
+       ((public.salud_del_vencimiento()->>'atrasadas')::integer = 0)),
+
   -- --- RLS en las tablas --------------------------------------------------
   (90, 'RLS prendido en todas las tablas de public',
        (SELECT count(*) = 0 FROM pg_class c

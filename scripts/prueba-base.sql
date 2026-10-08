@@ -984,10 +984,78 @@ BEGIN
 END $$;
 
 -- ============================================
+-- 14. El reloj del vencimiento
+-- ============================================
+-- `liberar_vencidas()` corre al leer y al escribir, y eso cubre lo que importa:
+-- nadie puede tomar unas noches que un hold vencido figure ocupando. Lo que no
+-- cubre es que nadie entre: ahí el hold no vence y las noches quedan tomadas.
+--
+-- La 013 programa un job de pg_cron para eso. Acá pg_cron no existe —hay que
+-- compilarlo aparte— así que lo que se comprueba es lo que SÍ se puede
+-- comprobar en cualquier parte, y resulta que es lo más importante:
+--
+--   - que la función diga la verdad sobre qué mecanismo está vivo, en vez de
+--     suponer que hay uno;
+--   - y que `atrasadas` cuente de verdad, porque es el único número que no
+--     miente: si no es 0, el reloj está muerto, sea cual sea.
+DO $$
+DECLARE
+  v JSONB;
+  v_unidad UUID := 'bbbbbbbb-0000-0000-0000-000000000002';
+BEGIN
+  v := public.salud_del_vencimiento();
+
+  -- Sin pg_cron tiene que decir 'al_leer'. Que diga 'cron' acá sería la
+  -- mentira que esta función existe para no decir.
+  PERFORM pg_temp.verificar('sin pg_cron, dice que el vencimiento corre al leer',
+    v->>'mecanismo' = 'al_leer', v::text);
+  PERFORM pg_temp.verificar('y por lo tanto NO dice que está bien',
+    (v->>'esta_bien')::boolean = false, v::text);
+  -- `nunca_corrio` es sobre el job, y acá no hay job: tiene que ser false, no
+  -- true. Decir «nunca corrió» de algo que no existe confundiría las dos cosas.
+  PERFORM pg_temp.verificar('ni dice que un job que no existe nunca corrió',
+    (v->>'nunca_corrio')::boolean = false, v::text);
+
+  -- Y ahora el número que no miente. Se planta un hold ya vencido, escribiendo
+  -- la fila directo para saltearse las funciones que lo vencerían: es la forma
+  -- de simular «nadie entró a la página».
+  INSERT INTO reservas (complejo_id, unidad_id, check_in, check_out, estado,
+                        origen, huesped_nombre, huesped_telefono, personas,
+                        importe, vence_el)
+  VALUES ('aaaaaaaa-0000-0000-0000-000000000001', v_unidad,
+          '2027-03-10', '2027-03-14', 'HOLD_TRANSFER', 'web',
+          'Seña que nadie vino a mirar', '5491100001111', 2, 100000,
+          now() - interval '3 hours');
+
+  v := public.salud_del_vencimiento();
+  PERFORM pg_temp.verificar('un hold vencido que nadie miró sale como atrasado',
+    (v->>'atrasadas')::integer >= 1, v::text);
+
+  -- Y al correr el mecanismo, deja de estar atrasado. Esto es lo que el job de
+  -- pg_cron va a hacer cada 5 minutos en producción.
+  PERFORM public.liberar_vencidas();
+
+  v := public.salud_del_vencimiento();
+  PERFORM pg_temp.verificar('y después de correr el vencimiento, ya no',
+    (v->>'atrasadas')::integer = 0, v::text);
+
+  -- Las noches quedaron libres: es para esto que todo lo anterior existe.
+  PERFORM pg_temp.verificar('las noches del hold vencido quedaron libres',
+    NOT EXISTS (
+      SELECT 1 FROM public.noches_ocupadas(
+        'aaaaaaaa-0000-0000-0000-000000000001', v_unidad)
+       WHERE check_in = '2027-03-10'
+    ));
+END $$;
+
+-- ============================================
 -- Resultado
 -- ============================================
 \echo ''
-SELECT lpad(n::text, 2) || '  ' || CASE WHEN paso THEN 'OK    ' ELSE 'FALLA ' END || nombre ||
+-- lpad RECORTA cuando el texto es más largo que el ancho: con 2, la prueba
+-- 103 se imprimía como «10», igual que la 104 y la 105. Un número de prueba
+-- repetido manda a buscar la prueba equivocada.
+SELECT lpad(n::text, 3) || '  ' || CASE WHEN paso THEN 'OK    ' ELSE 'FALLA ' END || nombre ||
        CASE WHEN paso OR detalle = '' THEN '' ELSE E'\n        → ' || detalle END AS "prueba de la base"
   FROM resultado ORDER BY n;
 

@@ -16,7 +16,9 @@
     "test": "npm run typecheck && npm run sin-marca && npm run test:reglas",
     "test:reglas": "tsx src/lib/__tests__/fechas.manual.mts && tsx src/lib/__tests__/precios.manual.mts && tsx src/lib/__tests__/calendario.manual.mts && tsx src/lib/__tests__/temporada.manual.mts && tsx src/lib/__tests__/tenant.manual.mts",
     "dev:local": "./scripts/dev-local.sh",
-    "prueba:navegador": "tsx scripts/prueba-navegador.mts"
+    "prueba:navegador": "tsx scripts/prueba-navegador.mts",
+    "prueba:panel": "tsx scripts/prueba-panel.mts",
+    "prueba:duenos": "tsx scripts/prueba-dos-duenos.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

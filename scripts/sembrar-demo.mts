@@ -22,7 +22,7 @@
  * falla si acá apareciera el nombre o el teléfono de un cliente de verdad.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 
 for (const linea of readFileSync('.env.local', 'utf-8').split('\n')) {
@@ -42,6 +42,20 @@ if (!URL_BASE || !SERVICIO) {
 }
 
 const MAIL_DUENIO = process.env.ALOJAOS_DEMO_EMAIL ?? 'duenio@ejemplo.test';
+// El segundo dueño existe para una sola cosa, y es la más importante del
+// producto: comprobar que no ve nada del primero. Un sistema multi-inquilino
+// que no se prueba con dos inquilinos no está probado.
+const MAIL_VECINO = process.env.ALOJAOS_DEMO_EMAIL_VECINO ?? 'vecino@ejemplo.test';
+
+/**
+ * Dónde quedan las contraseñas.
+ *
+ * En un archivo y no sólo impresas en pantalla: las baterías las necesitan, y
+ * la alternativa es que quien corre las pruebas copie dos contraseñas a mano
+ * cada vez. Está en .gitignore —el patrón `.alojaos-demo*`— y son credenciales
+ * de un complejo inventado en un proyecto de prueba, no de nadie.
+ */
+const ARCHIVO_CLAVES = '.alojaos-demo.json';
 
 const cabeceras = {
   apikey: SERVICIO,
@@ -56,53 +70,84 @@ const cabeceras = {
  * contesta 422 con `email_exists`, que es una respuesta correcta y no un error
  * que haya que mostrar.
  */
-async function duenio(): Promise<string> {
+async function usuario(
+  mail: string,
+  nombre: string
+): Promise<{ id: string; clave: string | null }> {
   const clave = randomBytes(18).toString('base64url');
 
   const alta = await fetch(`${URL_BASE}/auth/v1/admin/users`, {
     method: 'POST',
     headers: cabeceras,
     body: JSON.stringify({
-      email: MAIL_DUENIO,
+      email: mail,
       password: clave,
       email_confirm: true,
-      user_metadata: { nombre: 'Dueño de ejemplo' },
+      user_metadata: { nombre },
     }),
   });
 
   if (alta.ok) {
     const { id } = (await alta.json()) as { id: string };
-    console.log(`→ dueño creado: ${MAIL_DUENIO}`);
-    console.log(`  contraseña (se muestra una sola vez): ${clave}`);
-    return id;
+    console.log(`→ creado: ${mail}`);
+    return { id, clave };
   }
 
   const error = await alta.text();
   if (!/email_exists|already been registered|already exists/i.test(error)) {
-    throw new Error(`no pude crear el dueño: HTTP ${alta.status} ${error.slice(0, 300)}`);
+    throw new Error(`no pude crear ${mail}: HTTP ${alta.status} ${error.slice(0, 300)}`);
   }
 
-  // Ya estaba. Se lo busca por mail.
-  const lista = await fetch(
-    `${URL_BASE}/auth/v1/admin/users?page=1&per_page=200`,
-    { headers: cabeceras }
-  );
+  // Ya estaba. Se lo busca por mail, y se le pone una contraseña nueva: la
+  // anterior se imprimió una sola vez y puede no estar en ningún lado. Es un
+  // usuario de un complejo inventado; rotarle la contraseña no le rompe nada a
+  // nadie, y deja la siembra idempotente de verdad en vez de a medias.
+  const lista = await fetch(`${URL_BASE}/auth/v1/admin/users?page=1&per_page=200`, {
+    headers: cabeceras,
+  });
   if (!lista.ok) throw new Error(`no pude listar los usuarios: HTTP ${lista.status}`);
   const { users } = (await lista.json()) as { users: Array<{ id: string; email: string }> };
-  const ya = users.find((u) => u.email?.toLowerCase() === MAIL_DUENIO.toLowerCase());
-  if (!ya) throw new Error(`el alta dijo que ${MAIL_DUENIO} ya existe, pero no lo encuentro`);
-  console.log(`→ el dueño ya estaba: ${MAIL_DUENIO} (la contraseña es la de antes)`);
-  return ya.id;
+  const ya = users.find((u) => u.email?.toLowerCase() === mail.toLowerCase());
+  if (!ya) throw new Error(`el alta dijo que ${mail} ya existe, pero no lo encuentro`);
+
+  const cambio = await fetch(`${URL_BASE}/auth/v1/admin/users/${ya.id}`, {
+    method: 'PUT',
+    headers: cabeceras,
+    body: JSON.stringify({ password: clave }),
+  });
+  if (!cambio.ok) {
+    console.log(`→ ya estaba: ${mail} (no pude rotarle la contraseña: HTTP ${cambio.status})`);
+    return { id: ya.id, clave: null };
+  }
+
+  console.log(`→ ya estaba: ${mail} (contraseña nueva)`);
+  return { id: ya.id, clave };
 }
 
 async function main() {
-  console.log(`\nSembrando el complejo de ejemplo en ${URL_BASE}\n`);
-  const idDuenio = await duenio();
-  console.log(`\nEl id del dueño es ${idDuenio}.`);
+  console.log(`\nSembrando en ${URL_BASE}\n`);
+
+  const duenio = await usuario(MAIL_DUENIO, 'Dueño de ejemplo');
+  const vecino = await usuario(MAIL_VECINO, 'Dueño del complejo vecino');
+
+  const claves = {
+    url: URL_BASE,
+    duenio: { email: MAIL_DUENIO, id: duenio.id, clave: duenio.clave },
+    vecino: { email: MAIL_VECINO, id: vecino.id, clave: vecino.clave },
+  };
+
+  writeFileSync(ARCHIVO_CLAVES, JSON.stringify(claves, null, 2) + '\n', { mode: 0o600 });
+
+  console.log(`\n→ las contraseñas quedaron en ${ARCHIVO_CLAVES} (0600, ignorado por git)`);
+  console.log(`   dueño:  ${MAIL_DUENIO}  ${duenio.clave ?? '(la de antes)'}`);
+  console.log(`   vecino: ${MAIL_VECINO}  ${vecino.clave ?? '(la de antes)'}`);
   console.log(
-    '\nEl resto de la siembra (complejo, unidades, precios, calendario) es SQL\n' +
-      'y vive en scripts/ejemplo-remoto.sql. Corré ese archivo con el id de\n' +
-      'arriba, o pegalo en el SQL Editor reemplazando EL_ID_DEL_DUENIO.\n'
+    `\nEl SQL del complejo (unidades, precios, calendario) está en scripts/ejemplo.sql.\n` +
+      `Corrélo con el id del dueño puesto en el ajuste:\n\n` +
+      `   SET alojaos.duenio = '${duenio.id}';\n` +
+      `   \\i scripts/ejemplo.sql\n\n` +
+      `Y el complejo vecino, para probar el aislamiento, con scripts/ejemplo-vecino.sql\n` +
+      `y SET alojaos.vecino = '${vecino.id}';\n`
   );
 }
 

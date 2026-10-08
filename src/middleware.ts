@@ -11,9 +11,16 @@
  *   2. **Un subdominio sirve sólo su página pública.** El panel, el login y la
  *      página comercial se van al dominio principal, así que la sesión del
  *      dueño nunca queda atada a un subdominio ni se puede leer desde uno.
+ *
+ * Y una tercera, que no es de seguridad pero sin ella el panel se cae: acá se
+ * **renueva la sesión**. El token de Supabase dura una hora; renovarlo escribe
+ * cookies, y un Server Component no puede escribir cookies. Si no se renueva
+ * acá, el dueño que deja el panel abierto una hora vuelve y está deslogueado
+ * sin motivo aparente.
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { CABECERA_COMPLEJO, complejoDelHost } from './lib/tenant';
 
 /** Lo que sólo vive en el dominio principal. */
@@ -26,7 +33,34 @@ const SOLO_DOMINIO_PRINCIPAL = [
   '/api/interno',
 ];
 
-export function middleware(req: NextRequest) {
+/**
+ * Renueva la sesión si hace falta, y devuelve la respuesta con las cookies
+ * puestas. Si no hay Supabase configurado no hace nada: el stack local sin
+ * claves tiene que poder servir la página pública igual.
+ */
+async function conSesionRenovada(req: NextRequest, respuesta: NextResponse) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const clave = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !clave) return respuesta;
+
+  const supabase = createServerClient(url, clave, {
+    cookies: {
+      getAll: () => req.cookies.getAll(),
+      setAll: (cookiesNuevas: Array<{ name: string; value: string; options: CookieOptions }>) => {
+        for (const { name, value, options } of cookiesNuevas) {
+          respuesta.cookies.set(name, value, options);
+        }
+      },
+    },
+  });
+
+  // `getUser()` es lo que dispara la renovación. El resultado no se usa acá:
+  // quién puede ver qué lo decide RLS más adelante, no el middleware.
+  await supabase.auth.getUser();
+  return respuesta;
+}
+
+export async function middleware(req: NextRequest) {
   const url = req.nextUrl;
   const complejo = complejoDelHost(req.headers.get('host'));
 
@@ -35,7 +69,7 @@ export function middleware(req: NextRequest) {
   cabeceras.delete(CABECERA_COMPLEJO);
 
   if (!complejo) {
-    return NextResponse.next({ request: { headers: cabeceras } });
+    return conSesionRenovada(req, NextResponse.next({ request: { headers: cabeceras } }));
   }
 
   // En un subdominio, todo lo que no sea la página del complejo se va al
@@ -48,6 +82,9 @@ export function middleware(req: NextRequest) {
   }
 
   cabeceras.set(CABECERA_COMPLEJO, complejo);
+  // En un subdominio no hace falta renovar nada: ahí no hay sesión de dueño, y
+  // la página pública no la usa. Tocar cookies de sesión en el subdominio de un
+  // complejo sería justo lo que la regla 2 evita.
   return NextResponse.next({ request: { headers: cabeceras } });
 }
 

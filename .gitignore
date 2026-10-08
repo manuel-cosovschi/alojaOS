@@ -33,3 +33,6 @@ supabase/.temp/
 
 # El stack local que levanta scripts/dev-local.sh
 /tmp-dev
+
+# Las contraseñas del complejo de ejemplo, que escribe scripts/sembrar-demo.mts.
+.alojaos-demo*
