@@ -20,8 +20,40 @@
 --   - y una unidad sin precio en un período, para ver qué hace la página cuando
 --     no puede cotizar.
 
-INSERT INTO auth.users (id, email)
-VALUES ('11111111-1111-1111-1111-111111111111', 'duenio@ejemplo.test');
+-- ------------------------------------------------------------------
+-- El dueño
+-- ------------------------------------------------------------------
+-- Este archivo se corre en dos lugares, y el dueño es lo único que se crea
+-- distinto:
+--
+--   - en el Postgres de al lado (`dev-local.sh`), `auth.users` es una tabla de
+--     dos columnas que levanta el arnés, y se puede insertar una fila;
+--   - en un proyecto Supabase, `auth.users` es de Supabase y la crea el
+--     servicio de Auth. Una fila puesta a mano queda sin las columnas que ese
+--     servicio espera: el usuario existe para la base y no para el login. Ahí
+--     lo crea `scripts/sembrar-demo.mts` por la API, y pasa su id acá.
+--
+-- Dos archivos de siembra, uno por cada lado, es la forma de que la base de
+-- producción termine distinta de la local. Así que es uno y se adapta: el id
+-- del dueño sale de un ajuste de sesión, y si no viene, se usa el fijo de
+-- siempre y se crea la fila.
+--
+--   psql -v duenio="'<uuid>'" -f scripts/ejemplo.sql     ← no se usa así
+--   SET alojaos.duenio = '<uuid>';                       ← así
+DO $duenio$
+DECLARE
+  v_duenio UUID := nullif(current_setting('alojaos.duenio', true), '')::uuid;
+BEGIN
+  IF v_duenio IS NULL THEN
+    v_duenio := '11111111-1111-1111-1111-111111111111';
+    INSERT INTO auth.users (id, email) VALUES (v_duenio, 'duenio@ejemplo.test');
+  END IF;
+
+  -- Queda en el ajuste para que el INSERT de más abajo lo encuentre, venga de
+  -- afuera o lo hayamos puesto acá.
+  PERFORM set_config('alojaos.duenio', v_duenio::text, false);
+END
+$duenio$;
 
 INSERT INTO complejos (
   id, slug, nombre, nombre_corto, descripcion,
@@ -44,7 +76,8 @@ INSERT INTO complejos (
 );
 
 INSERT INTO complejo_miembros (complejo_id, user_id)
-VALUES ('0a0a0a0a-0000-0000-0000-00000000000a', '11111111-1111-1111-1111-111111111111');
+VALUES ('0a0a0a0a-0000-0000-0000-00000000000a',
+        current_setting('alojaos.duenio')::uuid);
 
 INSERT INTO unidades (id, complejo_id, codigo, nombre, capacidad_maxima, sugerencia_ocupacion, orden) VALUES
   ('0b0b0b0b-0000-0000-0000-00000000000b', '0a0a0a0a-0000-0000-0000-00000000000a',

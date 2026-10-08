@@ -26,6 +26,7 @@
 
 import { chromium, type Page } from 'playwright';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 const PUERTO = process.env.ALOJAOS_PORT ?? '3000';
 const SLUG = process.env.ALOJAOS_SLUG ?? 'cabanias-del-sol';
@@ -34,6 +35,17 @@ const BASE = `http://${SLUG}.${RAIZ}:${PUERTO}`;
 
 /** Con este nombre reserva la batería, y por este nombre se limpia. */
 const HUESPED = 'Prueba de Navegador';
+
+/** Lee una variable de .env.local, que es donde apunta el entorno. */
+function delEnv(clave: string): string {
+  try {
+    return (
+      readFileSync('.env.local', 'utf-8').match(new RegExp(`^${clave}=(.*)$`, 'm'))?.[1]?.trim() ?? ''
+    );
+  } catch {
+    return '';
+  }
+}
 
 /**
  * Borra la reserva que dejó la corrida anterior.
@@ -45,14 +57,41 @@ const HUESPED = 'Prueba de Navegador';
  * batería que sólo pasa la primera vez es una batería que después se explica
  * como «capaz quedó algo colgado», y así se tapa una falla de verdad.
  *
+ * Tiene que limpiar en los dos entornos contra los que esto corre, porque si no
+ * la segunda corrida de uno de los dos falla y no se sabe por qué:
+ *
+ *   - contra Supabase, por la API con la clave de servicio;
+ *   - contra el Postgres de `dev:local`, con psql.
+ *
  * Se borra por el nombre del huésped, que es de la batería y de nadie más.
- * Habla con la base de `dev:local` (127.0.0.1:5433, que es la que ese script
- * levanta), no con Supabase: si no la encuentra, no es un error, simplemente no
- * hay nada que limpiar y lo dice.
  */
-function limpiarLoDeAntes(): string {
-  // Cuántas borró lo tiene que contestar la base, no el texto que imprime psql:
-  // con `-q` psql no imprime el `DELETE 1`, así que leer ese cartel daba
+async function limpiarLoDeAntes(): Promise<string> {
+  const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? delEnv('NEXT_PUBLIC_SUPABASE_URL')).replace(/\/$/, '');
+  const servicio = process.env.SUPABASE_SERVICE_ROLE_KEY ?? delEnv('SUPABASE_SERVICE_ROLE_KEY');
+
+  // Contra un proyecto Supabase de verdad. Se reconoce por el dominio, no por
+  // la presencia de la clave: `dev:local` también deja una clave puesta.
+  if (/supabase\.co/.test(url)) {
+    if (!servicio) {
+      return 'apunta a Supabase y no hay clave de servicio, así que no pude limpiar';
+    }
+    const res = await fetch(`${url}/rest/v1/reservas?huesped_nombre=eq.${encodeURIComponent(HUESPED)}`, {
+      method: 'DELETE',
+      headers: {
+        apikey: servicio,
+        Authorization: `Bearer ${servicio}`,
+        Prefer: 'return=representation',
+      },
+    });
+    if (!res.ok) return `no pude limpiar en Supabase: HTTP ${res.status}`;
+    const borradas = (await res.json()) as unknown[];
+    return borradas.length === 0
+      ? 'la base de Supabase estaba limpia'
+      : `borré ${borradas.length} reserva(s) en Supabase que había dejado una corrida anterior`;
+  }
+
+  // Contra el Postgres de `dev:local`. Cuántas borró lo contesta la base, no el
+  // cartel de psql: con `-q` el `DELETE 1` no se imprime, así que leerlo daba
   // siempre cero y el mensaje decía «la base estaba limpia» cuando no lo
   // estaba. Un mensaje tranquilizador y falso, que es justo lo que este
   // proyecto persigue.
@@ -143,7 +182,7 @@ async function tocarDia(page: Page, etiquetaAria: string) {
 }
 
 async function main() {
-  console.log(`→ ${limpiarLoDeAntes()}\n`);
+  console.log(`→ ${await limpiarLoDeAntes()}\n`);
 
   // El `Host` decide qué complejo se sirve, así que la prueba tiene que pedir
   // por el nombre de verdad. Chromium no permite sobreescribir esa cabecera a
