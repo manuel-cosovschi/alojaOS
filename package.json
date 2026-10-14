@@ -25,7 +25,8 @@
     "alta": "tsx scripts/alta-de-cliente.mts",
     "verificar": "tsx scripts/verificar-produccion.mts",
     "huellas": "tsx scripts/huellas.mts",
-    "capturas": "tsx scripts/capturas.mts"
+    "capturas": "tsx scripts/capturas.mts",
+    "og": "tsx scripts/og.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

@@ -70,7 +70,19 @@ async function main() {
 
     // --- La página comercial ------------------------------------------------
     await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
-    const comercial = await page.locator('body').innerText();
+    // ------------------------------------------------------------------
+    // Por qué todo esto compara sin distinguir mayúsculas
+    // ------------------------------------------------------------------
+    // `innerText` devuelve el texto COMO SE VE, y los títulos de la página
+    // comercial están en versales por CSS. Así que buscar «nunca dos veces la
+    // misma noche» en minúscula daba falso: la página lo decía y la prueba
+    // decía que no. Una falsa alarma enseña a leer las fallas como ruido.
+    //
+    // Y lo mismo vale, al revés, para las comprobaciones NEGATIVAS de más
+    // abajo: un `!texto.includes('Posada Vecina')` pasaría igual si esa cadena
+    // estuviera en pantalla con otra caja. Pasar por el motivo equivocado es
+    // peor que fallar.
+    const comercial = (await page.locator('body').innerText()).toLowerCase();
     verificar(
       comercial.includes('nunca dos veces la misma noche'),
       'la página comercial se sirve en el dominio principal'
@@ -84,10 +96,35 @@ async function main() {
     // No se busca el título de una sección sino el contenido, justamente para
     // que la prueba sobreviva a que lo muevan de lugar otra vez.
     for (const [texto, que] of [
-      ['Booking', 'que la página siga diciendo que no se conecta con los portales'],
+      ['booking', 'que la página siga diciendo que no se conecta con los portales'],
       ['tarjeta', 'y que la seña se transfiere, que no se cobra con tarjeta'],
     ] as const) {
       verificar(comercial.includes(texto), que, `no aparece «${texto}» en ninguna parte`);
+    }
+
+    // --- Las cabeceras que protegen el panel --------------------------------
+    // La que importa es `frame-ancestors`: sin ella, cualquiera puede meter
+    // `/login` o `/panel` adentro de un iframe en su página, taparlo con algo
+    // y hacer que un dueño apriete «Confirmar la reserva» creyendo que aprieta
+    // otra cosa. Se comprueba contra el despliegue y no contra el archivo de
+    // configuración porque lo que protege es lo que llega, no lo que está
+    // escrito: un `next.config.ts` correcto con un despliegue viejo no protege
+    // a nadie.
+    {
+      const r = await page.request.get(`${BASE}/`, { failOnStatusCode: false });
+      const h = r.headers();
+      for (const [clave, parte] of [
+        ['content-security-policy', 'frame-ancestors'],
+        ['x-content-type-options', 'nosniff'],
+        ['referrer-policy', 'strict-origin'],
+        ['strict-transport-security', 'max-age'],
+      ] as const) {
+        verificar(
+          (h[clave] ?? '').includes(parte),
+          `el despliegue manda ${clave}`,
+          `vino «${h[clave] ?? '(no vino)'}»`
+        );
+      }
     }
 
     // --- El panel sin sesión ------------------------------------------------
@@ -109,9 +146,9 @@ async function main() {
 
       verificar(page.url().includes('/panel'), 'el login entra al panel', page.url());
 
-      const panel = await page.locator('body').innerText();
-      verificar(panel.includes('Cabañas del Sol'), 'y se ve el complejo del dueño');
-      verificar(!panel.includes('Posada Vecina'), 'y nada del complejo de otro dueño');
+      const panel = (await page.locator('body').innerText()).toLowerCase();
+      verificar(panel.includes('cabañas del sol'), 'y se ve el complejo del dueño');
+      verificar(!panel.includes('posada vecina'), 'y nada del complejo de otro dueño');
 
       // Lo que sólo se puede comprobar allá: que la clave de servicio que
       // cargó Vercel sirva. Si faltara o estuviera revocada, el panel lo
@@ -136,7 +173,7 @@ async function main() {
       await page.waitForTimeout(3000);
 
       const conError = await page.locator('body').innerText();
-      verificar(conError.includes('no coinciden'), 'con la contraseña mal, lo dice');
+      verificar(conError.toLowerCase().includes('no coinciden'), 'con la contraseña mal, lo dice');
       // Un mensaje igual para «ese mail no existe» y «la contraseña está mal»:
       // distinguirlos le dice a cualquiera qué mails tienen cuenta.
       verificar(

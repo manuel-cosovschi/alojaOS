@@ -1,8 +1,10 @@
+import type { Metadata } from 'next';
 import { leerComplejo, nochesOcupadas, slugDeLaPeticion } from '@/lib/complejo';
 import { hoyISO } from '@/lib/fechas';
 import { Reservar } from '@/components/Reservar';
 import { datosParaTransferir } from '@/actions/comprobante';
 import { Comercial } from '@/components/comercial/Comercial';
+import { direccionDelComplejo } from '@/lib/tenant';
 
 /**
  * La raíz.
@@ -14,6 +16,75 @@ import { Comercial } from '@/components/comercial/Comercial';
  * disponibilidad vieja le ofrece a alguien una fecha que ya se tomó.
  */
 export const dynamic = 'force-dynamic';
+
+/**
+ * El título de la pestaña y la tarjeta que se ve al compartir el enlace.
+ *
+ * ==================================================================
+ * Esto era un bug del producto, no un detalle
+ * ==================================================================
+ * Sin esto, las dos páginas heredaban el título del layout: **«AlojaOS»**. O
+ * sea que el huésped que abría la página de Cabañas del Sol veía «AlojaOS» en
+ * la pestaña, y si le pasaba el enlace a su familia por WhatsApp, la vista
+ * previa decía «AlojaOS — El sistema de reservas de tu complejo».
+ *
+ * Toda la propuesta es «tu página, con tu nombre y tus colores», y el único
+ * lugar donde el huésped ve un nombre antes de entrar decía el nuestro.
+ *
+ * Y del lado de la página comercial faltaba lo mismo por el otro motivo: el
+ * canal por el que se reparte es un mensaje, y un enlace sin vista previa en
+ * WhatsApp es un renglón gris. Es la parte de la página que más gente ve.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const slug = await slugDeLaPeticion();
+
+  if (!slug) {
+    const titulo = 'AlojaOS · Reservas para complejos de 3 a 15 unidades';
+    const descripcion =
+      'Tu propia página de reservas, con tu nombre y tus colores. El huésped elige ' +
+      'las noches, ve el precio, transfiere la seña y sube el comprobante. Sin comisión ' +
+      'por reserva. Y nunca dos reservas sobre la misma unidad y la misma noche.';
+    return {
+      title: titulo,
+      description: descripcion,
+      openGraph: {
+        title: titulo,
+        description: descripcion,
+        type: 'website',
+        locale: 'es_AR',
+        siteName: 'AlojaOS',
+        images: [{ url: '/og.png', width: 1200, height: 630, alt: 'AlojaOS' }],
+      },
+      twitter: { card: 'summary_large_image', title: titulo, description: descripcion, images: ['/og.png'] },
+    };
+  }
+
+  const complejo = await leerComplejo(slug);
+  if (!complejo) return { title: 'No encontramos este complejo' };
+
+  const donde = [complejo.localidad, complejo.provincia].filter(Boolean).join(', ');
+  const titulo = donde ? `${complejo.nombre} · ${donde}` : complejo.nombre;
+  // La descripción que cargó el dueño, si la cargó. Si no, una que al menos
+  // dice qué es la página, y no la del producto.
+  const descripcion =
+    complejo.descripcion?.trim() ||
+    `Consultá disponibilidad y reservá tus noches en ${complejo.nombre}${donde ? `, ${donde}` : ''}.`;
+
+  return {
+    title: titulo,
+    description: descripcion,
+    openGraph: {
+      title: titulo,
+      description: descripcion,
+      type: 'website',
+      locale: 'es_AR',
+      siteName: complejo.nombre,
+      url: direccionDelComplejo(slug) || undefined,
+    },
+    // Nada de nuestra marca acá: esta página es del complejo.
+    twitter: { card: 'summary', title: titulo, description: descripcion },
+  };
+}
 
 export default async function Pagina() {
   const slug = await slugDeLaPeticion();

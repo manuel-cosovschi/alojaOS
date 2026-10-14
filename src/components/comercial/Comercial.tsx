@@ -54,6 +54,7 @@
 import { ENLACE_WHATSAPP, MAIL_CONTACTO } from '@/lib/constants';
 import { MARCA, NOCHE } from '@/lib/marca-alojaos';
 import { CASO, HALLAZGOS } from '@/lib/caso';
+import { direccionDelComplejo } from '@/lib/tenant';
 import {
   PLANES,
   MESES_QUE_SE_PAGAN_POR_ANIO,
@@ -74,8 +75,25 @@ const SECCIONES = [
   { id: 'precio', texto: 'Precio' },
 ];
 
-/** La dirección del demo, que es lo único de esta página que no se puede falsear. */
-const DEMO = CAPTURAS['huesped-eligiendo'].de;
+/**
+ * La dirección del demo, que es lo único de esta página que no se puede falsear.
+ *
+ * ------------------------------------------------------------------
+ * Por qué NO sale de `CAPTURAS[...].de`
+ * ------------------------------------------------------------------
+ * Porque ahí estaba, y salió a producción apuntando a
+ * `http://cabanias-del-sol.alojaos.test:3000` — mi máquina. El enlace existía,
+ * el botón andaba, y el que lo tocaba no llegaba a ninguna parte. Es
+ * exactamente el error que esta página ya tuvo una vez con el WhatsApp de
+ * contacto, y volvió por otra puerta.
+ *
+ * La causa es confundir dos cosas que parecían una: `de` dice **de dónde salió
+ * esa imagen** —y esa corrida fue local, porque las pantallas del panel
+ * todavía no estaban en producción— y eso es documentación, no un enlace para
+ * un visitante. La dirección del demo se arma como se arma la de cualquier
+ * complejo, desde el dominio del sitio.
+ */
+const DEMO = direccionDelComplejo('cabanias-del-sol');
 
 /** La fecha de las capturas, escrita como la lee alguien de acá. */
 const DIA_DE_LAS_CAPTURAS = CAPTURAS_SACADAS_EL.split('-').reverse().join('/');
@@ -95,6 +113,22 @@ export function Comercial() {
         } as React.CSSProperties
       }
     >
+      {/*
+        El fondo oscuro tiene que llegar más allá de esta página.
+
+        Sin esto, `body` se queda con el crema que fija `globals.css` para la
+        página de un complejo, y eso se ve en dos lados: cuando en un teléfono
+        estirás el scroll más allá del final —aparece una franja crema abajo de
+        una página negra— y en la barra del navegador, que se pinta del color
+        del documento.
+
+        `color-scheme: dark` es la otra mitad y se nota en la calculadora: las
+        perillas son controles del sistema operativo, y sin esto el navegador
+        las dibuja en su versión clara, con la barra gris sobre el fondo
+        oscuro. Decirle que el documento es oscuro las dibuja como corresponde.
+      */}
+      <style>{`html{color-scheme:dark}body{background:${NOCHE.fondo}}`}</style>
+
       {/* Esta línea tiene que correr ANTES de pintar: es la que habilita el
           estado escondido de las animaciones. Si no corriera —JavaScript
           apagado, un error de red— nada se esconde y la página se ve entera,
@@ -435,10 +469,16 @@ function Cinta() {
       style={{ background: NOCHE.fondoHondo, borderTop: `1px solid ${NOCHE.borde}`, borderBottom: `1px solid ${NOCHE.borde}` }}
     >
       {/* El contenido va dos veces: cuando el desplazamiento llega al 50 %, el
-          segundo juego está donde arrancó el primero y el ciclo no se nota. */}
-      <div className="cinta flex w-max gap-10 whitespace-nowrap">
+          segundo juego está donde arrancó el primero y el ciclo no se nota.
+
+          Y las ocho copias están `aria-hidden`: para quien usa un lector de
+          pantalla, una cinta que repite la misma frase ocho veces es ocho veces
+          la misma frase. La frase se dice una sola vez, abajo, donde ninguna
+          pantalla la muestra pero todo lector la lee. */}
+      <p className="sr-only">{frase}</p>
+      <div className="cinta flex w-max gap-10 whitespace-nowrap" aria-hidden>
         {[0, 1].map((juego) => (
-          <div key={juego} className="flex gap-10" aria-hidden={juego === 1}>
+          <div key={juego} className="flex gap-10">
             {[0, 1, 2, 3].map((i) => (
               <span
                 key={i}

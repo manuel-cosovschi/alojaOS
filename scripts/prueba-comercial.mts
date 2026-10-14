@@ -164,6 +164,38 @@ async function main() {
       verificar(inicial !== despues, 'y el número cambia al mover una perilla', `${inicial} → ${despues}`);
     }
 
+    // --- Los enlaces absolutos llevan a algún lado -------------------------
+    // Acá se escapó uno de los grandes: el «abrí el demo» del hero salió a
+    // producción apuntando a `http://cabanias-del-sol.alojaos.test:3000`, que
+    // es mi máquina. El enlace existía, se podía tocar, y no llevaba a ninguna
+    // parte. Esta batería miraba los anclajes (`#`) y los internos (`/`), y los
+    // absolutos —que son justo los que pueden apuntar a otro lado— no.
+    //
+    // La regla no es «que no diga .test»: contra el servidor local, decir
+    // `.test` es lo CORRECTO. La regla es que un enlace absoluto de esta página
+    // tiene que quedar en el mismo dominio desde el que se está sirviendo. Así
+    // la prueba vale igual local y en producción, y la que falla es la mezcla,
+    // que es exactamente lo que pasó.
+    {
+      const miDominio = new URL(BASE).hostname;
+      const absolutos = [...new Set(enlaces.filter((h) => /^https?:\/\//.test(h)))];
+      const afuera = absolutos.filter((h) => {
+        const host = new URL(h).hostname;
+        return host !== miDominio && !host.endsWith(`.${miDominio}`) && host !== 'wa.me';
+      });
+      verificar(
+        afuera.length === 0,
+        `los ${absolutos.length} enlaces absolutos se quedan en ${miDominio}`,
+        `se van a otro lado: ${afuera.join(', ')}`
+      );
+
+      // Y que contesten. wa.me queda afuera: le responde distinto a un robot.
+      for (const url of absolutos.filter((h) => new URL(h).hostname !== 'wa.me')) {
+        const r = await page.request.get(url, { failOnStatusCode: false, timeout: 15_000 }).catch(() => null);
+        verificar((r?.status() ?? 0) < 400, `el enlace a ${url} contesta`, `HTTP ${r?.status() ?? 'sin respuesta'}`);
+      }
+    }
+
     // --- Sin JavaScript, la página se ve entera ----------------------------
     // Las secciones aparecen al scrollear, y una animación de aparición
     // esconde el contenido y confía en que algo lo vuelva a mostrar. Si ese
