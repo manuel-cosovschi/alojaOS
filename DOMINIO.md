@@ -42,17 +42,29 @@ momento. Dejó de reproducirse una vez que el despliegue terminó de propagar. N
 tengo la causa probada; lo que sí está comprobado es que no se reproduce más y
 que la batería da 12 de 12.
 
-## Lo que falta
+## Los mails: verificados y saliendo
 
-- Que **Resend termine de verificar** el dominio. Los cuatro registros ya
-  resuelven; falta su propio chequeo, que puede tardar un rato.
-- Cargar **`RESEND_DE="AlojaOS <reservas@alojaos.shop>"`** una vez verificado.
-  Hasta entonces el sistema **no manda mails y lo deja anotado**: cada reserva
-  queda con un aviso en `SIN_CONFIGURAR` cuyo motivo dice que falta el
-  remitente, y el panel le muestra al dueño a qué huésped escribirle.
-  `npm run prueba:navegador` mira si están la clave y el remitente y exige lo
-  que corresponda, así que cuando los dos estén, esa batería empieza a exigir
-  `ENVIADO` sola.
+Resend terminó de verificar `alojaos.shop` el **14/10**. Los cuatro registros
+figuran `verified` y el dominio quedó con `sending: enabled` en `sa-east-1`.
+
+`RESEND_DE="AlojaOS <reservas@alojaos.shop>"` está cargado en Vercel —los tres
+entornos— y en `.env.local`.
+
+Y está comprobado contra el sistema andando, no contra el panel de Resend:
+`npm run prueba:navegador` mira si están la clave **y** el remitente y exige lo
+que corresponda. Con los dos cargados, la aserción pasó sola a exigir `ENVIADO`,
+y da:
+
+```
+OK     reservar deja anotado el intento de aviso por mail
+OK     con el mail configurado, el aviso figura como ENVIADO y con el id del proveedor
+OK     y con la dirección a la que se habría mandado
+OK     y la base dice lo mismo que la pantalla
+```
+
+El id del proveedor es la parte que importa: dice que Resend lo aceptó, no que
+nosotros lo intentamos. Si algún día deja de salir, el aviso queda en `FALLO`
+con el motivo y el panel le dice al dueño a qué huésped escribirle.
 
 ## Por qué el registrador sigue en GoDaddy
 
