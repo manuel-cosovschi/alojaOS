@@ -407,6 +407,24 @@ WITH esperado(orden, que, existe) AS (
        NOT has_schema_privilege('anon', 'sistema', 'USAGE')
         AND NOT has_schema_privilege('authenticated', 'sistema', 'USAGE')),
 
+  -- --- 020: el alta de un cliente -----------------------------------------
+  (130, 'crear_complejo() existe',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='crear_complejo' AND pronamespace='public'::regnamespace)),
+  -- Es la única función del esquema que crea complejos, así que es la única que
+  -- NO puede estar al alcance de un dueño: un rol que crea complejos es un rol
+  -- que puede escribir en el de cualquiera.
+  (131, 'y sólo la puede llamar el servidor',
+       has_function_privilege('service_role', 'public.crear_complejo(jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('authenticated', 'public.crear_complejo(jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.crear_complejo(jsonb)', 'EXECUTE')),
+  -- SECURITY INVOKER a propósito: `service_role` ya saltea RLS, así que la
+  -- función no necesita elevar nada. Si alguna vez quedara concedida a
+  -- `authenticated` por error, RLS le bloquearía las escrituras igual.
+  (132, 'y no eleva privilegios: es SECURITY INVOKER',
+       (SELECT NOT prosecdef FROM pg_proc
+         WHERE proname='crear_complejo' AND pronamespace='public'::regnamespace)),
+
   -- --- RLS en las tablas --------------------------------------------------
   (99, 'RLS prendido en todas las tablas de public',
        (SELECT count(*) = 0 FROM pg_class c

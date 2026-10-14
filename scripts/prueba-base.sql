@@ -2156,6 +2156,223 @@ BEGIN
       = 'Posada de Precios');
 END $$;
 
+
+-- ============================================
+-- 19. El alta de un cliente, de una
+-- ============================================
+-- Lo que se prueba acá es sobre todo lo que NO queda cuando algo falla: el alta
+-- de un complejo son cuatro escrituras en cuatro tablas, y la razón de que sea
+-- una función es que o queda todo o no queda nada.
+DO $$
+DECLARE
+  v        JSONB;
+  v_id     UUID;
+  v_antes  INTEGER;
+  v_ok     BOOLEAN;
+BEGIN
+  SELECT count(*) INTO v_antes FROM complejos;
+
+  -- ----------------------------------------------------------------
+  -- Un alta completa
+  -- ----------------------------------------------------------------
+  v := public.crear_complejo(jsonb_build_object(
+    'slug', 'hosteria-de-prueba',
+    'nombre', 'Hostería de Prueba',
+    'localidad', 'Villa Ejemplo',
+    'duenio', '11111111-1111-1111-1111-111111111111',
+    'whatsapp', '+54 9 223 555-1111',
+    'datos_transferencia', 'Alias: hosteria.prueba',
+    'ultima_fecha', (current_date + 300)::text,
+    'minimo_noches', 2,
+    'unidades', jsonb_build_array(
+      jsonb_build_object('codigo', 'h1', 'nombre', 'Habitación Uno', 'capacidad_maxima', 2),
+      jsonb_build_object('codigo', 'h2', 'nombre', 'Habitación Dos', 'capacidad_maxima', 4,
+                         'sugerencia_ocupacion', 'ideal dos adultos y dos chicos')
+    )
+  ));
+  PERFORM pg_temp.verificar('se puede dar de alta un complejo entero de una',
+    (v->>'ok')::boolean = true AND (v->>'unidades')::int = 2, v::text);
+  v_id := (v->>'id')::uuid;
+
+  PERFORM pg_temp.verificar('con su dueño ya colgado',
+    (SELECT count(*) = 1 FROM complejo_miembros
+      WHERE complejo_id = v_id AND user_id = '11111111-1111-1111-1111-111111111111'));
+  PERFORM pg_temp.verificar('sus unidades en orden y en mayúsculas',
+    (SELECT array_agg(codigo ORDER BY orden) FROM unidades WHERE complejo_id = v_id)
+      = ARRAY['H1','H2']);
+  PERFORM pg_temp.verificar('y su ventana de reservas cargada',
+    (SELECT ultima_fecha = current_date + 300 AND minimo_noches = 2
+       FROM config_calendario WHERE complejo_id = v_id));
+  PERFORM pg_temp.verificar('el WhatsApp entró limpio, como en el panel',
+    (SELECT whatsapp FROM complejos WHERE id = v_id) = '5492235551111');
+
+  -- ----------------------------------------------------------------
+  -- Y no vende, y lo dice
+  -- ----------------------------------------------------------------
+  -- Un alta que contesta «listo» y deja un complejo que no vende nada es la
+  -- misma falla que este sistema persigue en todas las otras pantallas.
+  PERFORM pg_temp.verificar('las reservas quedan apagadas, porque no hay precios',
+    (SELECT NOT reservas_habilitadas FROM complejos WHERE id = v_id));
+  PERFORM pg_temp.verificar('y la respuesta dice que falta cargarlos',
+    (v->'falta'->>'precios')::boolean = true, v::text);
+  PERFORM pg_temp.verificar('y que dónde transferir ya está',
+    (v->'falta'->>'donde_transferir')::boolean = false, v::text);
+
+  -- La consecuencia de verdad: la página se abre y no deja reservar.
+  PERFORM pg_temp.verificar('la página existe',
+    (public.complejo_publico('hosteria-de-prueba')->>'slug') = 'hosteria-de-prueba');
+  v := public.crear_reserva('hosteria-de-prueba',
+         (SELECT id FROM unidades WHERE complejo_id = v_id ORDER BY orden LIMIT 1),
+         current_date + 10, current_date + 13, 2::smallint,
+         'Prueba Alta', '30111250', 'alta@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('pero no se puede reservar: las reservas están apagadas',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'reservas_cerradas', v::text);
+
+  -- ----------------------------------------------------------------
+  -- El slug, que no se puede corregir después
+  -- ----------------------------------------------------------------
+  v := public.crear_complejo(jsonb_build_object(
+    'slug', 'hosteria-de-prueba', 'nombre', 'Otra',
+    'duenio', '11111111-1111-1111-1111-111111111111',
+    'ultima_fecha', (current_date + 300)::text,
+    'unidades', jsonb_build_array(
+      jsonb_build_object('codigo', 'X', 'nombre', 'X', 'capacidad_maxima', 2))
+  ));
+  PERFORM pg_temp.verificar('dos complejos con la misma dirección no pueden coexistir',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'slug_ocupado', v::text);
+
+  v := public.crear_complejo(jsonb_build_object(
+    'slug', 'Cabañas Del Sol', 'nombre', 'Con mayúsculas y espacios',
+    'duenio', '11111111-1111-1111-1111-111111111111',
+    'ultima_fecha', (current_date + 300)::text,
+    'unidades', jsonb_build_array(
+      jsonb_build_object('codigo', 'X', 'nombre', 'X', 'capacidad_maxima', 2))
+  ));
+  PERFORM pg_temp.verificar('una dirección con espacios y acentos no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'slug_invalido', v::text);
+  PERFORM pg_temp.verificar('y el mensaje muestra la forma que espera',
+    v->>'mensaje' LIKE '%cabanias-del-sol%', v::text);
+
+  -- ----------------------------------------------------------------
+  -- Lo que falta no crea nada a medias
+  -- ----------------------------------------------------------------
+  SELECT count(*) INTO v_antes FROM complejos;
+
+  v := public.crear_complejo(jsonb_build_object(
+    'slug', 'sin-unidades', 'nombre', 'Sin unidades',
+    'duenio', '11111111-1111-1111-1111-111111111111',
+    'ultima_fecha', (current_date + 300)::text,
+    'unidades', '[]'::jsonb
+  ));
+  PERFORM pg_temp.verificar('un complejo sin unidades no se crea',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'sin_unidades', v::text);
+
+  v := public.crear_complejo(jsonb_build_object(
+    'slug', 'sin-ventana', 'nombre', 'Sin ventana',
+    'duenio', '11111111-1111-1111-1111-111111111111',
+    'unidades', jsonb_build_array(
+      jsonb_build_object('codigo', 'X', 'nombre', 'X', 'capacidad_maxima', 2))
+  ));
+  PERFORM pg_temp.verificar('ni uno sin hasta cuándo se puede reservar',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'falta_ultima_fecha', v::text);
+
+  v := public.crear_complejo(jsonb_build_object(
+    'slug', 'sin-duenio', 'nombre', 'Sin dueño',
+    'duenio', gen_random_uuid(),
+    'ultima_fecha', (current_date + 300)::text,
+    'unidades', jsonb_build_array(
+      jsonb_build_object('codigo', 'X', 'nombre', 'X', 'capacidad_maxima', 2))
+  ));
+  PERFORM pg_temp.verificar('ni uno cuyo dueño no exista en Auth',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'duenio_inexistente', v::text);
+
+  v := public.crear_complejo(jsonb_build_object(
+    'slug', 'duenio-roto', 'nombre', 'Dueño roto',
+    'duenio', 'no-soy-un-uuid',
+    'ultima_fecha', (current_date + 300)::text,
+    'unidades', jsonb_build_array(
+      jsonb_build_object('codigo', 'X', 'nombre', 'X', 'capacidad_maxima', 2))
+  ));
+  PERFORM pg_temp.verificar('un id de dueño que no es un id tampoco revienta',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'falta_duenio', v::text);
+
+  PERFORM pg_temp.verificar('y ninguno de esos cuatro dejó un complejo a medias',
+    (SELECT count(*) FROM complejos) = v_antes);
+
+  -- ----------------------------------------------------------------
+  -- La transacción: una unidad mal escrita revierte el complejo entero
+  -- ----------------------------------------------------------------
+  -- Es la razón de que esto sea una función y no cuatro llamadas. Con cuatro
+  -- llamadas, acá quedaría un complejo con una unidad y sin calendario.
+  v_ok := false;
+  BEGIN
+    PERFORM public.crear_complejo(jsonb_build_object(
+      'slug', 'a-medias', 'nombre', 'A medias',
+      'duenio', '11111111-1111-1111-1111-111111111111',
+      'ultima_fecha', (current_date + 300)::text,
+      'unidades', jsonb_build_array(
+        jsonb_build_object('codigo', 'OK', 'nombre', 'Esta está bien', 'capacidad_maxima', 2),
+        jsonb_build_object('codigo', '', 'nombre', '', 'capacidad_maxima', 2))
+    ));
+  EXCEPTION WHEN check_violation THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('una unidad sin código corta el alta', v_ok);
+  PERFORM pg_temp.verificar('y el complejo no quedó creado',
+    NOT EXISTS (SELECT 1 FROM complejos WHERE slug = 'a-medias'));
+  PERFORM pg_temp.verificar('ni su unidad buena',
+    NOT EXISTS (SELECT 1 FROM unidades WHERE codigo = 'OK'));
+
+  -- Y una capacidad imposible la frena el CHECK de la tabla, revirtiendo igual.
+  v_ok := false;
+  BEGIN
+    PERFORM public.crear_complejo(jsonb_build_object(
+      'slug', 'capacidad-rota', 'nombre', 'Capacidad rota',
+      'duenio', '11111111-1111-1111-1111-111111111111',
+      'ultima_fecha', (current_date + 300)::text,
+      'unidades', jsonb_build_array(
+        jsonb_build_object('codigo', 'Z', 'nombre', 'Z', 'capacidad_maxima', 0))
+    ));
+  EXCEPTION WHEN check_violation THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('una capacidad en cero también corta el alta', v_ok);
+  PERFORM pg_temp.verificar('y tampoco deja nada',
+    NOT EXISTS (SELECT 1 FROM complejos WHERE slug = 'capacidad-rota'));
+END $$;
+
+-- Y el complejo recién creado es tan ajeno como cualquier otro.
+DO $$
+DECLARE
+  v_id    UUID;
+  v_vistos INTEGER;
+BEGIN
+  v_id := (SELECT id FROM complejos WHERE slug = 'hosteria-de-prueba');
+
+  PERFORM set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+
+  -- `SET LOCAL ROLE authenticated` y no sólo el claim del JWT: esta prueba corre
+  -- como superusuario, y a un superusuario RLS no se le aplica. Sin el cambio de
+  -- rol, la aserción daba 1 y yo iba a creer que el aislamiento estaba roto. Es
+  -- el mismo patrón del bloque 10.
+  SET LOCAL ROLE authenticated;
+  SELECT count(*) INTO v_vistos FROM complejos WHERE id = v_id;
+  RESET ROLE;
+
+  PERFORM pg_temp.verificar('el vecino no ve el complejo recén dado de alta',
+    v_vistos = 0, format('vio %s', v_vistos));
+
+  -- Y la función de alta no la puede llamar: no está concedida a su rol. Eso se
+  -- comprueba por el permiso, no intentándolo, porque en esta prueba el rol de
+  -- la sesión es el superusuario y podría todo.
+  PERFORM pg_temp.verificar('y crear_complejo() no está concedida a los dueños',
+    NOT has_function_privilege('authenticated', 'public.crear_complejo(jsonb)', 'EXECUTE'));
+  PERFORM pg_temp.verificar('ni a los visitantes',
+    NOT has_function_privilege('anon', 'public.crear_complejo(jsonb)', 'EXECUTE'));
+  PERFORM pg_temp.verificar('y sí al servidor, que es el que da las altas',
+    has_function_privilege('service_role', 'public.crear_complejo(jsonb)', 'EXECUTE'));
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+END $$;
+
 -- ============================================
 -- Resultado
 -- ============================================

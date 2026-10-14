@@ -25,6 +25,7 @@
 --   habilitar_reservas()          ✗ falta
 --   guardar_unidad()              ✗ falta
 --   borrar_unidad()               ✗ falta
+--   crear_complejo()              ✗ falta  (la 020: el alta de un cliente)
 --
 -- El conector corta la llamada a los 60 segundos sin ejecutar nada cuando el
 -- SQL contiene sentencias que trata como destructivas —lo mismo que ya pasaba
@@ -56,13 +57,15 @@
 --   1. supabase/migrations/016_precios_desde_el_panel.sql
 --   2. supabase/migrations/017_calendario_desde_el_panel.sql
 --   3. supabase/migrations/018_datos_del_complejo.sql
+--   4. supabase/migrations/019_registro_de_migraciones.sql
+--   5. supabase/migrations/020_alta_de_cliente.sql
 --
--- Las tres son idempotentes (`CREATE OR REPLACE`), así que volver a aplicar lo
--- que ya está no hace nada.
+-- Las cinco son idempotentes (`CREATE OR REPLACE` y `IF NOT EXISTS`), así que
+-- volver a aplicar lo que ya está no hace nada.
 --
 -- Después, correr `scripts/verificar-produccion.sql` en el mismo editor: tienen
--- que dar `ok` las filas 93 a 98 (la 016), 100 a 105 (la 017) y 110 a 115 (la
--- 018).
+-- que dar `ok` las filas 93 a 98 (la 016), 100 a 105 (la 017), 110 a 115 (la
+-- 018), 120 y 121 (la 019) y 130 a 132 (la 020).
 --
 -- Y `npm run prueba:panel`, que tiene una asercion sola para esto: le pregunta
 -- a la base si las once funciones que escriben existen, y hoy dice que faltan
@@ -71,10 +74,19 @@
 -- ------------------------------------------------------------------
 -- Para que esto no vuelva a pasar
 -- ------------------------------------------------------------------
--- El repo ya tiene el camino bueno: `npm run db:migrate` (`scripts/migrate.ts`)
--- aplica todas las migraciones por la Management API de Supabase, en orden, y
--- se para en la primera que falla. No pasa por el conector, así que no tiene
--- esta limitación. Necesita dos variables en `.env.local`:
+-- `npm run db:migrate` (`scripts/migrate.ts`) aplica por la Management API de
+-- Supabase, sin pasar por el conector, así que no tiene esta limitación. Lleva
+-- registro en `sistema.migraciones` y corre sólo lo que falta.
+--
+-- Contra ESTE proyecto, que ya tiene las primeras quince aplicadas de antes de
+-- que existiera el registro, el primer paso es adoptarlas —anotarlas como
+-- aplicadas sin correrlas, porque volver a correrlas rompería—:
+--
+--   npx tsx scripts/migrate.ts --adoptar 015 --ver   # dice qué haría
+--   npx tsx scripts/migrate.ts --adoptar 015
+--   npx tsx scripts/migrate.ts                       # aplica 016 a 020
+--
+-- Necesita dos variables en `.env.local`:
 --
 --   SUPABASE_ACCESS_TOKEN  — un token personal de
 --                            https://supabase.com/dashboard/account/tokens
