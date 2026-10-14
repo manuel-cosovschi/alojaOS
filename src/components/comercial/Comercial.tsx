@@ -790,6 +790,23 @@ function QueNoHace() {
       texto:
         'La seña se transfiere a tu cuenta. Es la contracara de no cobrarte comisión: no pasa plata por nosotros.',
     },
+    // ------------------------------------------------------------------
+    // ESTE texto se cambia cuando las migraciones 016/017/018 estén
+    // aplicadas en producción, y no antes.
+    // ------------------------------------------------------------------
+    // Las pantallas para editar precios, calendario y datos del complejo ya
+    // están construidas y probadas, pero las once funciones que ESCRIBEN no
+    // están aplicadas en el proyecto de Supabase: el conector con el que las
+    // aplico se corta sin ejecutar nada. Ver
+    // `supabase/a_mano/02_las_escrituras_del_panel.sql`.
+    //
+    // Así que hoy esta frase es verdad, y adelantarla sería lo de siempre: la
+    // página comercial prometiendo algo que no anda. Ya lo hice una vez en este
+    // proyecto —prometí una demo que no existía— y no se repite.
+    //
+    // Cuando estén aplicadas, esto pasa a ser: «Los precios, el calendario y
+    // tus datos los cargás vos, desde el panel, cuando quieras.» Y la fila se
+    // va de esta lista.
     {
       titulo: 'Los precios y el calendario los cargamos nosotros',
       texto:
