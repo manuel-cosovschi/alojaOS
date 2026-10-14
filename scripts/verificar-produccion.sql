@@ -307,6 +307,52 @@ WITH esperado(orden, que, existe) AS (
          WHERE pronamespace='public'::regnamespace
            AND proname LIKE 'zz_borrar_a_mano%')),
 
+  -- --- 017: las reglas del calendario desde el panel ----------------------
+  -- Las seis de la 017, con sus permisos en la misma fila: una función que
+  -- existe y no está concedida es igual de inútil que una que no existe.
+  (100, 'las seis funciones de la 017 existen',
+       (SELECT count(DISTINCT proname) = 6 FROM pg_proc
+         WHERE pronamespace='public'::regnamespace
+           AND proname IN ('guardar_config_calendario','guardar_minimo','borrar_minimo',
+                           'guardar_bloque_fijo','borrar_bloque_fijo','reglas_del_calendario'))),
+  (101, 'y las seis las puede llamar el dueño',
+       has_function_privilege('authenticated',
+         'public.guardar_config_calendario(uuid,date,smallint,date)', 'EXECUTE')
+        AND has_function_privilege('authenticated',
+         'public.guardar_minimo(uuid,date,date,smallint,smallint[],text,uuid)', 'EXECUTE')
+        AND has_function_privilege('authenticated', 'public.borrar_minimo(uuid)', 'EXECUTE')
+        AND has_function_privilege('authenticated',
+         'public.guardar_bloque_fijo(uuid,date,date,text,uuid)', 'EXECUTE')
+        AND has_function_privilege('authenticated', 'public.borrar_bloque_fijo(uuid)', 'EXECUTE')
+        AND has_function_privilege('authenticated', 'public.reglas_del_calendario(uuid)', 'EXECUTE')),
+  -- Y ninguna para el huésped: estas escriben las reglas del negocio.
+  (102, 'y ninguna la puede llamar un visitante',
+       NOT has_function_privilege('anon',
+         'public.guardar_config_calendario(uuid,date,smallint,date)', 'EXECUTE')
+        AND NOT has_function_privilege('anon',
+         'public.guardar_minimo(uuid,date,date,smallint,smallint[],text,uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.borrar_minimo(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon',
+         'public.guardar_bloque_fijo(uuid,date,date,text,uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.borrar_bloque_fijo(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.reglas_del_calendario(uuid)', 'EXECUTE')),
+  (103, 'y las seis tienen search_path fijo',
+       (SELECT count(*) = 6 FROM pg_proc
+         WHERE pronamespace='public'::regnamespace
+           AND proname IN ('guardar_config_calendario','guardar_minimo','borrar_minimo',
+                           'guardar_bloque_fijo','borrar_bloque_fijo','reglas_del_calendario')
+           AND 'search_path=public' = ANY (coalesce(proconfig, ARRAY[]::text[])))),
+
+  -- Las restricciones contra el solape que estas funciones dejan decidir. Si
+  -- alguna faltara, dos reglas contradictorias sobre la misma noche entrarían
+  -- las dos y la página no tendría forma de elegir cuál aplicar.
+  (104, 'minimos_sin_solape y bloques_sin_solape siguen en pie',
+       (SELECT count(*) = 2 FROM pg_constraint
+         WHERE conname IN ('minimos_sin_solape','bloques_sin_solape') AND contype='x')),
+  (105, 'y periodos_sin_solape también',
+       (SELECT count(*) = 1 FROM pg_constraint
+         WHERE conname='periodos_sin_solape' AND contype='x')),
+
   -- --- RLS en las tablas --------------------------------------------------
   (99, 'RLS prendido en todas las tablas de public',
        (SELECT count(*) = 0 FROM pg_class c

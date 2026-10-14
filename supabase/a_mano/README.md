@@ -19,10 +19,10 @@ a la herramienta lo que la función hace.
 
 **Qué hay acá hoy:**
 
-- `02_la_016_entera.sql` **bloquea**. Mientras no se corra, el panel de precios
-  muestra todo pero no guarda: faltan `guardar_periodo()` y `borrar_periodo()`.
-  Es pegar `supabase/migrations/016_precios_desde_el_panel.sql` en el SQL
-  Editor; es idempotente.
+- `02_las_escrituras_del_panel.sql` **bloquea**. Mientras no se corra, el panel
+  muestra todo y no guarda nada: entraron las tres funciones que leen y ninguna
+  de las siete que escriben. Es pegar las migraciones 016 y 017 en el SQL
+  Editor, en ese orden; las dos son idempotentes.
 - `01_sacar_la_funcion_vieja.sql` es limpieza y no bloquea nada: borra una
   función que quedó corrida a un costado y que no puede llamar nadie.
 

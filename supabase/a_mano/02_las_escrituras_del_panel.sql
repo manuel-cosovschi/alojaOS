@@ -1,26 +1,35 @@
 -- ============================================
--- Aplicar la 016 entera (esto SÍ bloquea)
+-- Aplicar la 016 y la 017 enteras (esto SÍ bloquea)
 -- ============================================
 -- A diferencia del 01, esto no es limpieza: hasta que no se corra, **el panel
--- de precios no guarda nada**. El dueño ve sus períodos y ve qué no se puede
--- cotizar, pero el botón de guardar y el de borrar devuelven error.
+-- muestra todo y no guarda nada**. El dueño ve sus períodos, ve qué no se puede
+-- cotizar y ve cuántos días faltan para que su página deje de vender, pero
+-- todos los botones de guardar y de borrar devuelven error.
 --
 -- ------------------------------------------------------------------
 -- Por qué quedó a medias
 -- ------------------------------------------------------------------
--- `016_precios_desde_el_panel.sql` define cuatro funciones. Dos entraron por el
--- conector y dos no:
+-- Entró todo lo que lee, y nada de lo que escribe:
 --
---   periodos_del_complejo()   ✓ aplicada
---   salud_de_los_precios()    ✓ aplicada
---   guardar_periodo()         ✗ falta
---   borrar_periodo()          ✗ falta
+--   periodos_del_complejo()      ✓ aplicada
+--   salud_de_los_precios()       ✓ aplicada
+--   reglas_del_calendario()      ✓ aplicada
+--   guardar_periodo()            ✗ falta
+--   borrar_periodo()             ✗ falta
+--   guardar_config_calendario()  ✗ falta
+--   guardar_minimo()             ✗ falta
+--   borrar_minimo()              ✗ falta
+--   guardar_bloque_fijo()        ✗ falta
+--   borrar_bloque_fijo()         ✗ falta
 --
--- Las dos que faltan son las que escriben. El conector corta la llamada a los
--- 60 segundos sin ejecutar nada cuando el SQL contiene sentencias que trata
--- como destructivas —lo mismo que ya pasaba con `DROP`, ver el README— y lo
--- comprobé: después de cada timeout la función no existe en el catálogo, así
--- que no es que tarde, es que no llega.
+-- El conector corta la llamada a los 60 segundos sin ejecutar nada cuando el
+-- SQL contiene sentencias que trata como destructivas —lo mismo que ya pasaba
+-- con `DROP`, ver el README— y lo comprobé: después de cada timeout la función
+-- no existe en el catálogo, así que no es que tarde, es que no llega.
+--
+-- Que las de lectura sí entraran no es casualidad ni consuelo: el cronómetro de
+-- `ultima_fecha` —lo único de todo esto que avisa de una falla que llega sola—
+-- ya anda contra producción.
 --
 -- Lo acoté hasta donde sirve: un `CREATE FUNCTION` con un `DELETE ... WHERE
 -- false` adentro entra; uno con un `UPDATE` no; `borrar_periodo()`, que sólo
@@ -32,13 +41,18 @@
 -- ------------------------------------------------------------------
 -- Cómo correrlo
 -- ------------------------------------------------------------------
--- No hace falta pegar este archivo: pegá
--- `supabase/migrations/016_precios_desde_el_panel.sql` entero en el proyecto de
--- Supabase → **SQL Editor** → Run. Es idempotente (`CREATE OR REPLACE`), así
--- que volver a aplicar las dos que ya están no hace nada.
+-- No hace falta pegar este archivo. Pegar, en este orden, en el proyecto de
+-- Supabase → **SQL Editor** → Run:
 --
--- Después, correr `scripts/verificar-produccion.sql` en el mismo editor: las
--- filas 93 a 98 tienen que dar `ok`. Las 94 y 95 son las que hoy dicen FALTA.
+--   1. supabase/migrations/016_precios_desde_el_panel.sql
+--   2. supabase/migrations/017_calendario_desde_el_panel.sql
+--
+-- Las dos son idempotentes (`CREATE OR REPLACE`), así que volver a aplicar lo
+-- que ya está no hace nada.
+--
+-- Después, correr `scripts/verificar-produccion.sql` en el mismo editor: tienen
+-- que dar `ok` las filas 93 a 98 (la 016) y 100 a 105 (la 017). Hoy dicen FALTA
+-- la 94, la 95, la 97, la 98, la 100, la 101 y la 103.
 --
 -- ------------------------------------------------------------------
 -- Para que esto no vuelva a pasar

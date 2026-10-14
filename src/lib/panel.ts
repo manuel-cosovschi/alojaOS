@@ -275,3 +275,54 @@ export async function saludDeLosPrecios(complejoId: string): Promise<SaludDeLosP
   }
   return data as SaludDeLosPrecios;
 }
+
+export interface MinimoDelPanel {
+  id: string;
+  desde: string;
+  hasta: string;
+  noches: number;
+  etiqueta: string | null;
+  /** 0 = domingo … 6 = sábado. null = cualquier día. */
+  dias_checkin: number[] | null;
+}
+
+export interface BloqueDelPanel {
+  id: string;
+  check_in: string;
+  check_out: string;
+  noches: number;
+  etiqueta: string | null;
+}
+
+/**
+ * Las reglas de la temporada.
+ *
+ * `config` puede ser null: un complejo recién creado todavía no la tiene, y ese
+ * es justamente el estado que la pantalla tiene que poder mostrar —porque es el
+ * estado en que la página no ofrece ninguna fecha—.
+ *
+ * `hoy` viene de la base, en la zona del complejo. El reloj del navegador del
+ * dueño puede estar en cualquier huso.
+ */
+export interface ReglasDelCalendario {
+  hoy: string;
+  config: {
+    primera_fecha: string | null;
+    ultima_fecha: string;
+    minimo_noches: number;
+  } | null;
+  minimos: MinimoDelPanel[];
+  bloques: BloqueDelPanel[];
+}
+
+/** Las tres cosas juntas, porque el dueño las mira juntas. */
+export async function reglasDe(complejoId: string): Promise<ReglasDelCalendario | null> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('reglas_del_calendario', { p_complejo: complejoId });
+
+  if (error) {
+    console.error('[reglasDe] la base devolvió un error:', error.message);
+    return null;
+  }
+  return data as ReglasDelCalendario;
+}

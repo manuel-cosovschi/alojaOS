@@ -9,6 +9,7 @@ import {
   bloqueosDe,
   periodosDe,
   saludDeLosPrecios,
+  reglasDe,
 } from '@/lib/panel';
 import { Senas } from '@/components/Senas';
 import { SaludDelReloj } from '@/components/SaludDelReloj';
@@ -20,6 +21,7 @@ import { direccionDelComplejo } from '@/lib/tenant';
 import { hoyISO } from '@/lib/fechas';
 import { Fechas } from '@/components/Fechas';
 import { Precios } from '@/components/Precios';
+import { ReglasDeTemporada } from '@/components/ReglasDeTemporada';
 
 /**
  * El panel del dueño.
@@ -52,15 +54,16 @@ export default async function Panel() {
   // esperarlas en fila haría que un dueño con tres complejos espere el triple.
   const porComplejo = await Promise.all(
     complejos.map(async (c) => {
-      const [senas, avisos, unidades, bloqueos, periodos, saludPrecios] = await Promise.all([
+      const [senas, avisos, unidades, bloqueos, periodos, saludPrecios, reglas] = await Promise.all([
         senasPendientes(c.id),
         avisosQueNoSalieron(c.id),
         unidadesDe(c.id),
         bloqueosDe(c.id),
         periodosDe(c.id),
         saludDeLosPrecios(c.id),
+        reglasDe(c.id),
       ]);
-      return { complejo: c, senas, avisos, unidades, bloqueos, periodos, saludPrecios };
+      return { complejo: c, senas, avisos, unidades, bloqueos, periodos, saludPrecios, reglas };
     })
   );
 
@@ -88,7 +91,7 @@ export default async function Panel() {
             <SaludDelComprobante salud={saludComprobante} />
             {salud && <SaludDelReloj salud={salud} />}
 
-            {porComplejo.map(({ complejo, senas, avisos, unidades, bloqueos, periodos, saludPrecios }) => (
+            {porComplejo.map(({ complejo, senas, avisos, unidades, bloqueos, periodos, saludPrecios, reglas }) => (
               <section key={complejo.id}>
                 <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
                   <h2 className="text-lg font-semibold">{complejo.nombre}</h2>
@@ -150,6 +153,13 @@ export default async function Panel() {
                     moneda={complejo.moneda}
                     hoy={hoyISO(complejo.zona_horaria)}
                   />
+                </div>
+
+                {/* Las reglas de la temporada al final, pero el cronómetro de
+                    `ultima_fecha` está adentro y en rojo: es la única falla de
+                    este sistema que llega sola, sin que nadie haga nada. */}
+                <div className="mt-4">
+                  <ReglasDeTemporada complejoId={complejo.id} reglas={reglas} />
                 </div>
               </section>
             ))}

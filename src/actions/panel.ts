@@ -313,6 +313,201 @@ export async function borrarPeriodo(periodoId: string): Promise<Resultado> {
   };
 }
 
+/**
+ * Guardar la ventana de reservas y el mínimo general.
+ *
+ * Es lo único de todo el panel que arregla una falla que llega sola:
+ * `ultima_fecha` se pasa con el calendario y, el día que pasa, la página deja
+ * de ofrecer absolutamente todo. El mensaje de éxito dice las dos cosas que
+ * siguen importando después de guardar —si la fecha quedó vencida igual, y si
+ * la ventana nueva tiene noches sin precio—, porque las dos hacen que no se
+ * pueda reservar y ninguna se ve en la pantalla del huésped.
+ */
+export async function guardarVentana(
+  complejoId: string,
+  ultima: string,
+  minimo: number,
+  primera: string | null
+): Promise<Resultado> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('guardar_config_calendario', {
+    p_complejo: complejoId,
+    p_ultima: ultima,
+    p_minimo: minimo,
+    p_primera: primera,
+  });
+
+  if (error) {
+    console.error('[guardarVentana] la base no dejó:', error.message);
+    return { ok: false, mensaje: mensajeDeError(error.message) };
+  }
+
+  const r = (data ?? {}) as Record<string, unknown>;
+  if (r.ok !== true) {
+    return {
+      ok: false,
+      mensaje: (typeof r.mensaje === 'string' && r.mensaje) || 'No pudimos guardarlo.',
+    };
+  }
+
+  const huecos = Number(r.noches_sin_precio ?? 0);
+  const partes = ['Guardado.'];
+  if (r.ventana_vencida === true) {
+    partes.push('Ojo: esa fecha ya pasó, así que la página sigue sin ofrecer nada.');
+  } else {
+    partes.push(`Se puede reservar hasta ${r.dias_hasta_el_cierre} días de hoy.`);
+  }
+  if (huecos > 0) {
+    partes.push(
+      `Y quedan ${huecos} ${huecos === 1 ? 'noche' : 'noches'} de esa ventana sin precio cargado: esas no se pueden reservar.`
+    );
+  }
+  return { ok: true, mensaje: partes.join(' ') };
+}
+
+/**
+ * Guardar un tramo con su mínimo de noches y sus días de entrada.
+ *
+ * `dias` vacío significa «cualquier día», y la base lo normaliza a NULL junto
+ * con el caso de los siete días elegidos. No se normaliza acá: si estuviera en
+ * los dos lados, serían dos lugares que tienen que estar de acuerdo.
+ */
+export async function guardarMinimo(
+  complejoId: string,
+  desde: string,
+  hasta: string,
+  noches: number,
+  dias: number[],
+  etiqueta: string,
+  minimoId: string | null
+): Promise<Resultado> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('guardar_minimo', {
+    p_complejo: complejoId,
+    p_desde: desde,
+    p_hasta: hasta,
+    p_noches: noches,
+    p_dias: dias.length > 0 ? dias : null,
+    p_etiqueta: etiqueta.trim() || null,
+    p_minimo: minimoId,
+  });
+
+  if (error) {
+    console.error('[guardarMinimo] la base no dejó:', error.message);
+    return { ok: false, mensaje: mensajeDeError(error.message) };
+  }
+
+  const r = (data ?? {}) as Record<string, unknown>;
+  if (r.ok !== true) return { ok: false, mensaje: deSolape(r, 'mínimo') };
+
+  return {
+    ok: true,
+    mensaje:
+      r.cualquier_dia === true
+        ? 'Guardado. En ese tramo se puede entrar cualquier día.'
+        : 'Guardado.',
+  };
+}
+
+export async function borrarMinimo(minimoId: string): Promise<Resultado> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('borrar_minimo', { p_minimo: minimoId });
+
+  if (error) {
+    console.error('[borrarMinimo] la base no dejó:', error.message);
+    return { ok: false, mensaje: mensajeDeError(error.message) };
+  }
+
+  const r = (data ?? {}) as Record<string, unknown>;
+  if (r.ok !== true) {
+    return {
+      ok: false,
+      mensaje: (typeof r.mensaje === 'string' && r.mensaje) || 'No pudimos borrarlo.',
+    };
+  }
+
+  // Sin esto, el dueño borra el tramo de enero creyendo que queda sin mínimo y
+  // se encuentra con que se puede reservar una sola noche en temporada.
+  const general = r.vuelven_al_minimo_general;
+  return {
+    ok: true,
+    mensaje:
+      general != null
+        ? `Borrado. Esas noches vuelven al mínimo general de ${general}.`
+        : 'Borrado.',
+  };
+}
+
+/** Guardar un bloque que va entero. `check_out` es el día de salida. */
+export async function guardarBloqueFijo(
+  complejoId: string,
+  checkIn: string,
+  checkOut: string,
+  etiqueta: string,
+  bloqueId: string | null
+): Promise<Resultado> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('guardar_bloque_fijo', {
+    p_complejo: complejoId,
+    p_check_in: checkIn,
+    p_check_out: checkOut,
+    p_etiqueta: etiqueta.trim() || null,
+    p_bloque: bloqueId,
+  });
+
+  if (error) {
+    console.error('[guardarBloqueFijo] la base no dejó:', error.message);
+    return { ok: false, mensaje: mensajeDeError(error.message) };
+  }
+
+  const r = (data ?? {}) as Record<string, unknown>;
+  if (r.ok !== true) return { ok: false, mensaje: deSolape(r, 'bloque') };
+
+  return {
+    ok: true,
+    mensaje: `Guardado. Esas ${r.noches} noches van juntas o no van.`,
+  };
+}
+
+export async function borrarBloqueFijo(bloqueId: string): Promise<Resultado> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('borrar_bloque_fijo', { p_bloque: bloqueId });
+
+  if (error) {
+    console.error('[borrarBloqueFijo] la base no dejó:', error.message);
+    return { ok: false, mensaje: mensajeDeError(error.message) };
+  }
+
+  const r = (data ?? {}) as Record<string, unknown>;
+  if (r.ok !== true) {
+    return {
+      ok: false,
+      mensaje: (typeof r.mensaje === 'string' && r.mensaje) || 'No pudimos borrarlo.',
+    };
+  }
+  return { ok: true, mensaje: 'Borrado. Esas noches vuelven a venderse de a una.' };
+}
+
+/**
+ * El mensaje de un solape, con el tramo con el que choca.
+ *
+ * Lo comparten los mínimos y los bloques porque la respuesta de la base tiene
+ * la misma forma, y porque en los dos casos lo que el dueño necesita es el mismo
+ * dato: cuál mover.
+ */
+function deSolape(r: Record<string, unknown>, que: string): string {
+  const base = typeof r.mensaje === 'string' ? r.mensaje : 'No pudimos guardarlo.';
+  const choca = r.choca_con as Record<string, unknown> | undefined;
+  if (r.motivo !== 'se_pisa' || !choca) return base;
+
+  const desde = choca.desde ?? choca.check_in;
+  const hasta = choca.hasta ?? choca.check_out;
+  if (typeof desde !== 'string' || typeof hasta !== 'string') return base;
+
+  const nombre = choca.etiqueta ? `«${choca.etiqueta}»` : `el otro ${que}`;
+  return `${base} ${nombre} va del ${desde} al ${hasta}.`;
+}
+
 /** Reabrir una fecha cerrada, por su id. */
 export async function reabrirFecha(bloqueoId: string): Promise<Resultado> {
   const supabase = await clienteConSesion();

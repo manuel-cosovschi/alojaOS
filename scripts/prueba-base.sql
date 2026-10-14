@@ -1512,6 +1512,311 @@ BEGIN
     (SELECT count(*) FROM periodos_precio WHERE id = v_ajeno) = 1);
 END $$;
 
+
+-- ============================================
+-- 17. Las reglas del calendario desde el panel
+-- ============================================
+-- Sigue sobre el complejo de la 16 ('posada-de-precios'), que al final del
+-- bloque anterior quedó con `primera_fecha = hoy+10`, `ultima_fecha = hoy+30`
+-- y un solo período de precios de hoy a hoy+99.
+--
+-- Lo que importa de este bloque: cada regla que se guarda se comprueba contra
+-- `crear_reserva()`, no contra el informe. Que la función devuelva `ok: true`
+-- sólo dice que escribió una fila; lo que hay que saber es si la página deja o
+-- no deja reservar.
+DO $$
+DECLARE
+  v          JSONB;
+  v_id       UUID;
+  v_hoy      DATE;
+  v_complejo UUID := 'aaaaaaaa-0000-0000-0000-000000000003';
+  v_p1       UUID := 'cccccccc-0000-0000-0000-000000000001';
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+  v_hoy := (now() AT TIME ZONE
+            (SELECT zona_horaria FROM complejos WHERE id = v_complejo))::date;
+
+  -- Esta posada necesita slug para que `crear_reserva()` la encuentre, y un
+  -- precio en toda la ventana para que pueda cotizar.
+  PERFORM public.guardar_periodo(v_complejo, v_hoy, v_hoy + 400,
+            jsonb_build_object(v_p1::text, '50000'), 'todo',
+            (SELECT id FROM public.periodos_del_complejo(v_complejo) LIMIT 1));
+
+  -- ----------------------------------------------------------------
+  -- La ventana de reservas
+  -- ----------------------------------------------------------------
+  v := public.guardar_config_calendario(v_complejo, v_hoy + 120, 2::smallint, NULL);
+  PERFORM pg_temp.verificar('el dueño puede mover hasta cuándo se vende',
+    (v->>'ok')::boolean = true AND (v->>'dias_hasta_el_cierre')::int = 120, v::text);
+  PERFORM pg_temp.verificar('y la ventana nueva no tiene noches sin precio',
+    (v->>'noches_sin_precio')::int = 0, v::text);
+
+  -- Y la consecuencia: antes de mover la ventana, hoy+100 no se podía pedir.
+  v := public.crear_reserva('posada-de-precios', v_p1, v_hoy + 100, v_hoy + 104,
+         2::smallint, 'Prueba Ventana', '30111222', 'v@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('y ahora se puede reservar dentro de la ventana nueva',
+    (v->>'ok')::boolean = true, v::text);
+
+  -- Más allá sigue sin poderse, que es el punto de que la ventana exista.
+  v := public.crear_reserva('posada-de-precios', v_p1, v_hoy + 130, v_hoy + 134,
+         2::smallint, 'Prueba Afuera', '30111223', 'a@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('pero no más allá del día que puso el dueño',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'despues_de_la_ventana', v::text);
+
+  -- Estirar la ventana a un tramo sin precio lo dice en el acto. Es el error
+  -- que se comete de verdad: estirar hasta marzo y olvidarse de los precios de
+  -- marzo. Ahí el huésped elige fechas y recién después no hay precio.
+  v := public.guardar_config_calendario(v_complejo, v_hoy + 500, 2::smallint, NULL);
+  PERFORM pg_temp.verificar('estirar la ventana más allá de los precios lo avisa al guardar',
+    (v->>'ok')::boolean = true AND (v->>'noches_sin_precio')::int = 100, v::text);
+
+  -- ----------------------------------------------------------------
+  -- Lo que no es una ventana
+  -- ----------------------------------------------------------------
+  v := public.guardar_config_calendario(v_complejo, NULL, 2::smallint, NULL);
+  PERFORM pg_temp.verificar('sin hasta cuándo no se guarda nada',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'falta_ultima_fecha', v::text);
+
+  v := public.guardar_config_calendario(v_complejo, v_hoy + 10, 2::smallint, v_hoy + 20);
+  PERFORM pg_temp.verificar('una ventana al revés no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'fechas_invalidas', v::text);
+
+  v := public.guardar_config_calendario(v_complejo, v_hoy + 100, 99::smallint, NULL);
+  PERFORM pg_temp.verificar('un mínimo de 99 noches no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'minimo_invalido', v::text);
+
+  -- Una ventana ya vencida SÍ se guarda, y lo dice. Negárselo lo dejaría sin
+  -- poder escribir nada mientras corrige.
+  v := public.guardar_config_calendario(v_complejo, v_hoy - 5, 2::smallint, NULL);
+  PERFORM pg_temp.verificar('una ventana ya vencida se guarda pero lo dice',
+    (v->>'ok')::boolean = true AND (v->>'ventana_vencida')::boolean = true, v::text);
+  PERFORM pg_temp.verificar('y la salud de precios la pone en rojo',
+    (public.salud_de_los_precios(v_complejo)->>'ventana_vencida')::boolean = true);
+
+  -- Y con la ventana vencida no se puede reservar NADA, que es la falla
+  -- silenciosa que todo esto existe para que el dueño pueda arreglar solo.
+  v := public.crear_reserva('posada-de-precios', v_p1, v_hoy + 5, v_hoy + 9,
+         2::smallint, 'Prueba Vencida', '30111224', 'x@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('con la ventana vencida no se puede reservar nada',
+    (v->>'ok')::boolean = false, v::text);
+
+  -- Y el dueño lo arregla solo, que es el punto del bloque.
+  v := public.guardar_config_calendario(v_complejo, v_hoy + 400, 2::smallint, NULL);
+  PERFORM pg_temp.verificar('y el dueño lo arregla solo moviendo la fecha',
+    (v->>'ok')::boolean = true AND (v->>'ventana_vencida')::boolean = false, v::text);
+  v := public.crear_reserva('posada-de-precios', v_p1, v_hoy + 5, v_hoy + 9,
+         2::smallint, 'Prueba Arreglada', '30111225', 'y@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('y se vuelve a poder reservar',
+    (v->>'ok')::boolean = true, v::text);
+
+  -- ----------------------------------------------------------------
+  -- Los mínimos por tramo: la ex-constante del código
+  -- ----------------------------------------------------------------
+  -- En la página vieja la temporada alta era una constante: 20/12 al 1/3, siete
+  -- noches, entrada sábado o domingo. Esto es cargarla sin tocar un archivo.
+  v := public.guardar_minimo(v_complejo, v_hoy + 200, v_hoy + 260, 7::smallint,
+         ARRAY[6, 0]::smallint[], 'temporada alta');
+  PERFORM pg_temp.verificar('el dueño puede cargar un mínimo por tramo',
+    (v->>'ok')::boolean = true AND (v->>'cualquier_dia')::boolean = false, v::text);
+  v_id := (v->>'id')::uuid;
+
+  -- Cuatro noches en un tramo de siete: no entra.
+  v := public.crear_reserva('posada-de-precios', v_p1, v_hoy + 205, v_hoy + 209,
+         2::smallint, 'Prueba Minimo', '30111226', 'm@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('y cuatro noches no entran en un tramo de siete',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'pocas_noches'
+    AND (v->>'minimo')::int = 7, v::text);
+
+  -- Siete noches pero entrando un día que no es sábado ni domingo: tampoco.
+  v := public.crear_reserva('posada-de-precios', v_p1,
+         v_hoy + 200 + ((9 - extract(dow FROM v_hoy + 200)::int) % 7), -- cae en martes
+         v_hoy + 207 + ((9 - extract(dow FROM v_hoy + 200)::int) % 7),
+         2::smallint, 'Prueba Dia', '30111227', 'd@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('ni siete noches entrando un martes',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'dia_de_entrada', v::text);
+
+  -- Siete noches entrando sábado: sí.
+  v := public.crear_reserva('posada-de-precios', v_p1,
+         v_hoy + 200 + ((13 - extract(dow FROM v_hoy + 200)::int) % 7), -- cae en sábado
+         v_hoy + 207 + ((13 - extract(dow FROM v_hoy + 200)::int) % 7),
+         2::smallint, 'Prueba Sabado', '30111228', 's@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('pero sí siete noches entrando sábado',
+    (v->>'ok')::boolean = true, v::text);
+
+  -- ----------------------------------------------------------------
+  -- Los días de entrada, normalizados
+  -- ----------------------------------------------------------------
+  -- Siete días elegidos es «cualquier día», y se guarda como NULL. Si se
+  -- guardara como arreglo, la página le diría al huésped «se puede entrar
+  -- domingo, lunes, martes…» en vez de no decir nada.
+  v := public.guardar_minimo(v_complejo, v_hoy + 200, v_hoy + 260, 7::smallint,
+         ARRAY[0,1,2,3,4,5,6]::smallint[], 'temporada alta', v_id);
+  PERFORM pg_temp.verificar('elegir los siete días es no restringir ninguno',
+    (v->>'ok')::boolean = true AND (v->>'cualquier_dia')::boolean = true, v::text);
+  PERFORM pg_temp.verificar('y se guarda como nulo, no como los siete',
+    (SELECT dias_checkin IS NULL FROM minimos_noches WHERE id = v_id));
+
+  v := public.guardar_minimo(v_complejo, v_hoy + 200, v_hoy + 260, 7::smallint,
+         ARRAY[]::smallint[], 'temporada alta', v_id);
+  PERFORM pg_temp.verificar('un arreglo vacío tampoco deja el tramo invendible',
+    (v->>'cualquier_dia')::boolean = true, v::text);
+
+  v := public.guardar_minimo(v_complejo, v_hoy + 200, v_hoy + 260, 7::smallint,
+         ARRAY[6,0,6,9,-1]::smallint[], 'temporada alta', v_id);
+  PERFORM pg_temp.verificar('los días repetidos y los que no existen se limpian',
+    (v->'dias_checkin')::text = '[0, 6]', v::text);
+
+  -- ----------------------------------------------------------------
+  -- Dos tramos que se pisan
+  -- ----------------------------------------------------------------
+  v := public.guardar_minimo(v_complejo, v_hoy + 250, v_hoy + 300, 3::smallint,
+         NULL, 'media');
+  PERFORM pg_temp.verificar('un tramo de mínimos que se pisa con otro no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'se_pisa', v::text);
+  PERFORM pg_temp.verificar('y dice con cuál y de cuántas noches',
+    v->'choca_con'->>'etiqueta' = 'temporada alta'
+    AND (v->'choca_con'->>'noches')::int = 7, v::text);
+
+  -- Pegado pero sin pisarse, sí.
+  v := public.guardar_minimo(v_complejo, v_hoy + 261, v_hoy + 300, 3::smallint,
+         NULL, 'media');
+  PERFORM pg_temp.verificar('pegado al anterior sin pisarse, entra',
+    (v->>'ok')::boolean = true, v::text);
+
+  v := public.guardar_minimo(v_complejo, v_hoy + 200, v_hoy + 260, 99::smallint,
+         NULL, 'imposible');
+  PERFORM pg_temp.verificar('un mínimo de 99 noches por tramo tampoco entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'noches_invalidas', v::text);
+
+  -- ----------------------------------------------------------------
+  -- Borrar un tramo dice a qué mínimo vuelven esas noches
+  -- ----------------------------------------------------------------
+  -- Sin eso, el dueño borra el tramo de enero creyendo que queda sin mínimo y
+  -- se encuentra con que ahora se puede reservar una sola noche en temporada.
+  v := public.borrar_minimo(v_id);
+  PERFORM pg_temp.verificar('borrar un tramo dice a qué mínimo general vuelven',
+    (v->>'ok')::boolean = true AND (v->>'vuelven_al_minimo_general')::int = 2, v::text);
+
+  v := public.borrar_minimo(v_id);
+  PERFORM pg_temp.verificar('borrarlo dos veces lo dice en vez de contestar «listo»',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'no_existe', v::text);
+
+  -- ----------------------------------------------------------------
+  -- Los bloques que van enteros
+  -- ----------------------------------------------------------------
+  v := public.guardar_bloque_fijo(v_complejo, v_hoy + 310, v_hoy + 313, 'finde largo');
+  PERFORM pg_temp.verificar('el dueño puede cargar un bloque que va entero',
+    (v->>'ok')::boolean = true AND (v->>'noches')::int = 3, v::text);
+  v_id := (v->>'id')::uuid;
+
+  -- Y lo que el bloque existe para evitar: que se lo partan.
+  v := public.crear_reserva('posada-de-precios', v_p1, v_hoy + 310, v_hoy + 312,
+         2::smallint, 'Prueba Partido', '30111229', 'p@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('y nadie puede tomar dos de sus tres noches',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'bloque_fijo', v::text);
+
+  v := public.crear_reserva('posada-de-precios', v_p1, v_hoy + 310, v_hoy + 313,
+         2::smallint, 'Prueba Entero', '30111230', 'e@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('pero sí las tres juntas',
+    (v->>'ok')::boolean = true, v::text);
+
+  v := public.guardar_bloque_fijo(v_complejo, v_hoy + 312, v_hoy + 315, 'otro');
+  PERFORM pg_temp.verificar('dos bloques que se pisan no pueden coexistir',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'se_pisa', v::text);
+  PERFORM pg_temp.verificar('y dice con cuál',
+    v->'choca_con'->>'etiqueta' = 'finde largo', v::text);
+
+  v := public.guardar_bloque_fijo(v_complejo, v_hoy + 320, v_hoy + 320, 'de cero noches');
+  PERFORM pg_temp.verificar('un bloque de cero noches no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'fechas_invalidas', v::text);
+
+  v := public.borrar_bloque_fijo(v_id);
+  PERFORM pg_temp.verificar('borrar el bloque devuelve esas noches de a una',
+    (v->>'ok')::boolean = true, v::text);
+
+  -- ----------------------------------------------------------------
+  -- Leer las reglas
+  -- ----------------------------------------------------------------
+  PERFORM public.guardar_minimo(v_complejo, v_hoy - 100, v_hoy - 50, 5::smallint,
+            NULL, 'temporada pasada');
+  PERFORM public.guardar_minimo(v_complejo, v_hoy - 10, v_hoy + 10, 4::smallint,
+            NULL, 'el de ahora');
+
+  v := public.reglas_del_calendario(v_complejo);
+  PERFORM pg_temp.verificar('las reglas vienen juntas, con la config adentro',
+    (v->'config'->>'ultima_fecha')::date = v_hoy + 400
+    AND (v->'config'->>'minimo_noches')::int = 2, v::text);
+  PERFORM pg_temp.verificar('un tramo de la temporada pasada no aparece',
+    NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v->'minimos') AS e
+                 WHERE e->>'etiqueta' = 'temporada pasada'), v::text);
+  PERFORM pg_temp.verificar('pero el tramo en curso sí, aunque haya arrancado antes de hoy',
+    EXISTS (SELECT 1 FROM jsonb_array_elements(v->'minimos') AS e
+             WHERE e->>'etiqueta' = 'el de ahora'), v::text);
+  PERFORM pg_temp.verificar('y los bloques vienen en la misma respuesta',
+    jsonb_typeof(v->'bloques') = 'array', v::text);
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+END $$;
+
+-- Un complejo sin configuración todavía: es el estado de uno recién creado, y
+-- la pantalla tiene que poder mostrarlo.
+DO $$
+DECLARE v JSONB;
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+  v := public.reglas_del_calendario('aaaaaaaa-0000-0000-0000-000000000002');
+  PERFORM pg_temp.verificar('un complejo sin config devuelve config nula, no un error',
+    v->'config' = 'null'::jsonb AND jsonb_array_length(v->'minimos') = 0, v::text);
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+END $$;
+
+-- Y nada de esto lo puede tocar el vecino.
+DO $$
+DECLARE
+  v_ok    BOOLEAN;
+  v_ajeno UUID;
+BEGIN
+  v_ajeno := (SELECT id FROM minimos_noches
+               WHERE complejo_id = 'aaaaaaaa-0000-0000-0000-000000000003' LIMIT 1);
+
+  PERFORM set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+
+  v_ok := false;
+  BEGIN
+    PERFORM public.guardar_config_calendario('aaaaaaaa-0000-0000-0000-000000000003',
+      current_date + 10, 1::smallint, NULL);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('el vecino no puede mover la ventana de otro complejo', v_ok);
+
+  v_ok := false;
+  BEGIN
+    PERFORM public.reglas_del_calendario('aaaaaaaa-0000-0000-0000-000000000003');
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('ni leer sus reglas', v_ok);
+
+  v_ok := false;
+  BEGIN
+    PERFORM public.borrar_minimo(v_ajeno);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('ni borrarle un tramo de mínimos', v_ok);
+
+  v_ok := false;
+  BEGIN
+    PERFORM public.guardar_minimo('aaaaaaaa-0000-0000-0000-000000000003',
+      current_date, current_date + 5, 2::smallint, NULL, 'colado', v_ajeno);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('ni editárselo', v_ok);
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+
+  PERFORM pg_temp.verificar('y el tramo ajeno sigue como estaba',
+    (SELECT etiqueta FROM minimos_noches WHERE id = v_ajeno) <> 'colado');
+END $$;
+
 -- ============================================
 -- Resultado
 -- ============================================
