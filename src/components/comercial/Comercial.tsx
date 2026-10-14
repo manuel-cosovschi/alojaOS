@@ -10,54 +10,68 @@
  * vendés que nadie le tome la misma cabaña dos veces— y el problema nombrado
  * con las palabras con las que él lo cuenta.
  *
- * El orden sigue el de GastroOS, que es el molde de la familia y ya está
- * probado vendiendo: producto, problema, por dentro, caso, calculadora, un día
- * cualquiera, comparación, por qué nosotros, cómo arrancamos, precio,
- * preguntas.
+ * ==================================================================
+ * Por qué se rehízo, y qué se copió
+ * ==================================================================
+ * La versión anterior era correcta y larga: trece secciones de texto claro
+ * sobre fondo crema, con todo explicado. El problema de una página así no es
+ * que mienta, es que no se lee. El que la abre desde un mensaje decide en diez
+ * segundos, y en diez segundos no se lee un ensayo.
+ *
+ * Así que se rehízo con el molde de una página que ya vende bien, y lo que se
+ * tomó de ella es la forma, no el contenido:
+ *
+ *   · **Fondo oscuro**, con dos tonos que se alternan sección por sección y
+ *     una sola sección clara en el medio, que es la que corta el bloque.
+ *   · **Títulos en itálica, versales y muy ajustados**, con la mitad de la
+ *     frase en el color de acento. Es lo que le da carácter a la página, y es
+ *     gratis: no es una ilustración que hay que encargar.
+ *   · **Una idea por sección, dicha en una línea.** El texto largo que
+ *     explicaba cada cosa se fue; lo que quedó de cada idea es el titular.
+ *   · **Rótulo arriba de cada título**, chiquito y espaciado, que dice de qué
+ *     trata la sección antes de leerla.
+ *
+ * Lo que NO se copió: los diez logos de clientes, los cuatro contadores de
+ * «números reales» y el «más de X instituciones confían». De eso no tenemos
+ * nada, y una página de venta con un número inventado se cae con una sola
+ * pregunta. En su lugar va lo que sí tenemos y es más difícil de conseguir: un
+ * complejo con nombre y dirección, y tres errores de auditoría contados con el
+ * detalle de cuántos meses duraron.
  *
  * ==================================================================
- * Lo que esta página NO hace, y por qué
+ * Lo que esta página NO hace
  * ==================================================================
  * **No tiene testimonios ni números de resultados.** Ni «aumentá tus reservas
- * un 40 %» ni «ahorrá 10 horas por semana»: no los medimos. Un número inventado
- * se cae con una sola pregunta y cuando se cae se lleva puesta la credibilidad
- * de todo lo demás, incluido lo que sí es cierto. La calculadora, en cambio,
- * usa los números del que lee y calcula lo que deja de perder, que es lo único
- * sostenible.
+ * un 40 %» ni «ahorrá 10 horas por semana»: no los medimos. La calculadora, en
+ * cambio, usa los números del que lee y calcula lo que deja de perder, que es
+ * lo único sostenible. `npm run prueba:comercial` falla si alguna de esas tres
+ * promesas vuelve a aparecer.
  *
- * Lo que se pone en su lugar es más fuerte y es verdad: **el sistema corre en
- * un complejo con nombre y dirección** —ver `src/lib/caso.ts`, que explica qué
- * se puede escribir sobre él y qué no—, y antes de convertirlo en producto lo
- * auditamos entero y encontramos qué se rompía. Saber exactamente qué falla en
- * un sistema de reservas, con el detalle de cuántos meses falló, es una
- * credencial que no se improvisa.
- *
- * Y las pantallas no son dibujos: son capturas del sistema andando, sacadas por
- * `npm run capturas`, con la fecha a la vista y el demo enlazado al lado para
- * que cualquiera compare.
+ * Y las pantallas no son dibujos: son capturas del sistema andando, sacadas
+ * por `npm run capturas`, con la fecha a la vista y el demo enlazado al lado.
  */
 
 import { ENLACE_WHATSAPP, MAIL_CONTACTO } from '@/lib/constants';
-import { MARCA } from '@/lib/marca-alojaos';
+import { MARCA, NOCHE } from '@/lib/marca-alojaos';
+import { CASO, HALLAZGOS } from '@/lib/caso';
 import {
   PLANES,
   MESES_QUE_SE_PAGAN_POR_ANIO,
   CUOTAS_DE_TEMPORADA,
   PISO_DE_LOS_SISTEMAS_GRANDES,
 } from '@/lib/precios-alojaos';
-import { CASO, HALLAZGOS } from '@/lib/caso';
 import { Calculadora } from './Calculadora';
-import { Captura, Telefono } from './Pantallas';
+import { Captura, Marco, Telefono } from './Pantallas';
 import { CAPTURAS, CAPTURAS_SACADAS_EL } from './capturas.generado';
+import { Revelar } from './Revelar';
+import { Check, Cruz, Flecha, Punto } from './Iconos';
 
 const SECCIONES = [
-  { id: 'producto', texto: 'Producto' },
-  { id: 'por-dentro', texto: 'Por dentro' },
+  { id: 'problema', texto: 'El problema' },
+  { id: 'producto', texto: 'El producto' },
   { id: 'caso', texto: 'El caso' },
   { id: 'cuenta', texto: 'La cuenta' },
-  { id: 'comparacion', texto: 'Comparación' },
   { id: 'precio', texto: 'Precio' },
-  { id: 'preguntas', texto: 'Preguntas' },
 ];
 
 /** La dirección del demo, que es lo único de esta página que no se puede falsear. */
@@ -68,18 +82,37 @@ const DIA_DE_LAS_CAPTURAS = CAPTURAS_SACADAS_EL.split('-').reverse().join('/');
 
 export function Comercial() {
   return (
-    <div style={{ background: MARCA.crema, color: MARCA.texto }}>
+    <div
+      // Las dos variables de tipografía son las mismas que usa la página de un
+      // complejo; acá se las apunta a la del producto. Así los títulos y el
+      // cuerpo cambian con el mecanismo que ya existe, sin una regla nueva.
+      style={
+        {
+          background: NOCHE.fondo,
+          color: NOCHE.texto,
+          '--fuente-titulo': 'var(--font-geist-sans)',
+          '--fuente-cuerpo': 'var(--font-geist-sans)',
+        } as React.CSSProperties
+      }
+    >
+      {/* Esta línea tiene que correr ANTES de pintar: es la que habilita el
+          estado escondido de las animaciones. Si no corriera —JavaScript
+          apagado, un error de red— nada se esconde y la página se ve entera,
+          que es exactamente lo que tiene que pasar. */}
+      <script dangerouslySetInnerHTML={{ __html: "document.documentElement.classList.add('con-js')" }} />
+      <Revelar />
+
       <Navegacion />
       <Hero />
-      <LaReglaQueNoSePuedeRomper />
+      <Cinta />
       <ElProblema />
-      <PorDentro />
+      <AntesYDespues />
+      <ComoEmpezas />
+      <ElPanel />
+      <LaPaginaDelHuesped />
+      <LaRegla />
       <ElCaso />
       <LaCuenta />
-      <UnDiaCualquiera />
-      <Comparacion />
-      <PorQueNosotros />
-      <ComoArrancamos />
       <Precio />
       <Preguntas />
       <CierreFinal />
@@ -88,39 +121,217 @@ export function Comercial() {
   );
 }
 
-/* ================================================================== */
+/* ==================================================================
+   Las piezas que se repiten
+   ================================================================== */
+
+/**
+ * El rótulo de arriba de cada título.
+ *
+ * Chiquito, en versales y muy espaciado. Hace un trabajo concreto: el que
+ * scrollea rápido lee esto y sabe de qué trata la sección sin leer el título.
+ */
+function Rotulo({ children, centrado = false }: { children: React.ReactNode; centrado?: boolean }) {
+  return (
+    <p
+      className={`text-[11px] font-bold uppercase tracking-[0.28em] ${centrado ? 'text-center' : ''}`}
+      style={{ color: NOCHE.menta }}
+    >
+      {children}
+    </p>
+  );
+}
+
+/**
+ * El título de una sección.
+ *
+ * Itálica, versales, peso máximo y el espaciado muy cerrado. La parte en
+ * `acento` va en terracota: parte la frase en dos y le da el único punto de
+ * color de la sección.
+ *
+ * La itálica es sintética —la tipografía no trae cursiva— y eso acá juega a
+ * favor: la inclinación es pareja y da el aire de titular deportivo que se
+ * busca.
+ */
+function Titulo({
+  children,
+  acento,
+  centrado = false,
+  como = 'h2',
+}: {
+  children: React.ReactNode;
+  acento?: React.ReactNode;
+  centrado?: boolean;
+  como?: 'h1' | 'h2';
+}) {
+  const Tag = como;
+  return (
+    <Tag
+      className={[
+        'font-black italic uppercase tracking-[-0.03em]',
+        como === 'h1'
+          // Más chico que el del molde (60 px) porque el titular de acá tiene
+          // el doble de palabras: a 65 px eran cinco renglones, y un titular de
+          // cinco renglones deja de leerse como un titular.
+          ? 'text-[2.3rem] leading-[0.98] sm:text-5xl lg:text-[3.35rem]'
+          : 'text-[1.9rem] leading-[1.02] sm:text-4xl lg:text-5xl',
+        centrado ? 'text-center' : '',
+      ].join(' ')}
+    >
+      {children}
+      {acento && (
+        <>
+          {' '}
+          <span style={{ color: NOCHE.accionViva }}>{acento}</span>
+        </>
+      )}
+    </Tag>
+  );
+}
+
+/** Un párrafo de los que acompañan a un título. */
+function Bajada({
+  children,
+  centrado = false,
+  className = '',
+}: {
+  children: React.ReactNode;
+  centrado?: boolean;
+  className?: string;
+}) {
+  return (
+    <p
+      className={`leading-relaxed ${centrado ? 'mx-auto text-center' : ''} ${className}`}
+      style={{ color: NOCHE.textoSuave }}
+    >
+      {children}
+    </p>
+  );
+}
+
+/** Una tarjeta sobre el fondo oscuro. */
+function Tarjeta({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div
+      className={`rounded-2xl p-5 ${className}`}
+      style={{ background: NOCHE.tarjeta, border: `1px solid ${NOCHE.borde}` }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Una fila de las listas de capacidades, con su tilde. */
+function Fila({ children }: { children: React.ReactNode }) {
+  return (
+    <li
+      className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium"
+      style={{ background: NOCHE.tarjeta, border: `1px solid ${NOCHE.borde}` }}
+    >
+      <Check color={NOCHE.menta} />
+      {children}
+    </li>
+  );
+}
+
+/** El botón principal: el único terracota de la pantalla. */
+function BotonPrincipal({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      target={href.startsWith('http') ? '_blank' : undefined}
+      rel={href.startsWith('http') ? 'noopener' : undefined}
+      className="group inline-flex items-center gap-2.5 rounded-xl px-6 py-3.5 text-[15px] font-bold text-white transition hover:brightness-110"
+      style={{ background: NOCHE.accion }}
+    >
+      {children}
+      <Flecha />
+    </a>
+  );
+}
+
+/** El secundario: mismo tamaño, sin relleno, para no competir con el otro. */
+function BotonSecundario({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      className="inline-flex items-center gap-2 rounded-xl px-6 py-3.5 text-[15px] font-bold transition hover:bg-white/5"
+      style={{ border: `1px solid ${NOCHE.borde}`, color: NOCHE.texto }}
+    >
+      {children}
+    </a>
+  );
+}
+
+/** Una sección, con su fondo y su aire. */
+function Seccion({
+  id,
+  hondo = false,
+  children,
+  className = '',
+}: {
+  id?: string;
+  hondo?: boolean;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      id={id}
+      className={`scroll-mt-20 px-6 py-20 md:py-28 ${className}`}
+      style={{
+        background: hondo ? NOCHE.fondoHondo : NOCHE.fondo,
+        borderTop: `1px solid ${NOCHE.borde}`,
+      }}
+    >
+      <div className="mx-auto max-w-6xl">{children}</div>
+    </section>
+  );
+}
+
+/* ==================================================================
+   Las secciones
+   ================================================================== */
 
 function Navegacion() {
   return (
     <header
-      className="sticky top-0 z-20 border-b backdrop-blur"
-      style={{ borderColor: 'rgba(0,0,0,.07)', background: 'rgba(251,249,245,.85)' }}
+      className="sticky top-0 z-30 backdrop-blur"
+      style={{ background: 'rgba(6,25,27,.82)', borderBottom: `1px solid ${NOCHE.borde}` }}
     >
-      <nav className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-5 py-3 sm:px-8">
-        <a href="#" className="text-sm font-semibold tracking-tight" style={{ color: MARCA.tinta }}>
+      <nav className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-3.5">
+        {/* El logo NO va en versales: «AlojaOS» tiene la O y la S altas a
+            propósito —es un «OS», como el de un sistema operativo— y en
+            versales eso se pierde. */}
+        <a href="#" className="text-lg font-black italic tracking-tight">
           AlojaOS
         </a>
-        {/* Los enlaces se esconden en el celular: seis enlaces apretados en 360
-            píxeles no los toca nadie, y el que entra desde WhatsApp scrollea. */}
-        <ul className="hidden gap-5 text-sm md:flex" style={{ color: MARCA.textoSuave }}>
+        {/* Los enlaces se esconden en el celular: cinco enlaces apretados en
+            360 píxeles no los toca nadie, y el que entra desde un mensaje
+            scrollea. */}
+        <ul className="hidden gap-7 text-[13px] font-semibold uppercase tracking-wider md:flex">
           {SECCIONES.map((s) => (
             <li key={s.id}>
-              <a href={`#${s.id}`} className="hover:underline">
+              <a href={`#${s.id}`} className="transition hover:text-white" style={{ color: NOCHE.textoSuave }}>
                 {s.texto}
               </a>
             </li>
           ))}
         </ul>
-        <div className="flex items-center gap-3">
-          <a href="/login" className="hidden text-sm hover:underline sm:block" style={{ color: MARCA.textoSuave }}>
+        <div className="flex items-center gap-4">
+          <a
+            href="/login"
+            className="hidden text-[13px] font-semibold transition hover:text-white sm:block"
+            style={{ color: NOCHE.textoSuave }}
+          >
             Entrar
           </a>
           <a
             href={ENLACE_WHATSAPP}
             target="_blank"
             rel="noopener"
-            className="rounded-xl px-4 py-2 text-sm font-semibold text-white"
-            style={{ background: MARCA.acento }}
+            className="rounded-xl px-4 py-2 text-[13px] font-bold text-white transition hover:brightness-110"
+            style={{ background: NOCHE.accion }}
           >
             Escribinos
           </a>
@@ -132,59 +343,73 @@ function Navegacion() {
 
 function Hero() {
   return (
-    <section className="px-5 pb-14 pt-14 sm:px-8 sm:pt-20">
-      <div className="mx-auto grid max-w-5xl items-center gap-12 lg:grid-cols-[1.1fr_.9fr]">
+    <section className="relative overflow-hidden px-6 pb-16 pt-14 md:pb-24 md:pt-20">
+      {/* El resplandor. Es un solo degradado y no una imagen: pesa cero, se
+          adapta a cualquier pantalla y no hay que acordarse de optimizarlo. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background: `radial-gradient(60rem 32rem at 68% 18%, rgba(111,214,174,.09), transparent 60%),
+                       radial-gradient(44rem 26rem at 8% 0%, rgba(177,78,43,.12), transparent 62%)`,
+        }}
+      />
+
+      {/* El hero NO aparece al scrollear, y es a propósito: lo que se esconde
+          se revela recién cuando React hidrata, así que marcarlo acá sería
+          mostrar una pantalla vacía durante los primeros cuadros. Lo primero
+          que se ve tiene que estar desde el primer pintado. */}
+      <div className="relative mx-auto grid max-w-6xl items-center gap-14 lg:grid-cols-[1.05fr_.95fr]">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: MARCA.acento }}>
+          <span
+            className="inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.2em]"
+            style={{ border: `1px solid ${NOCHE.menta}44`, color: NOCHE.menta, background: `${NOCHE.menta}10` }}
+          >
+            <Punto color={NOCHE.menta} />
             Para complejos de 3 a 15 unidades
+          </span>
+
+          <div className="mt-6">
+            <Titulo como="h1" acento="dos veces la misma noche">
+              Tus cabañas se reservan solas. Y nunca
+            </Titulo>
+          </div>
+
+          <p className="mt-6 max-w-xl text-lg font-semibold leading-snug">
+            Tu propia página de reservas, con tu nombre y tus colores.
           </p>
-          <h1 className="mt-4 text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl lg:text-[3.4rem]">
-            Tus cabañas se reservan solas.
-            <br />
-            <span style={{ color: MARCA.tinta }}>Y nunca dos veces la misma noche.</span>
-          </h1>
-          <p className="mt-6 max-w-xl text-lg leading-relaxed" style={{ color: MARCA.textoSuave }}>
-            Una página de reservas con tu nombre y tus colores, donde el huésped
-            elige las noches, ve el precio, transfiere la seña y sube el
-            comprobante. Vos lo confirmás desde el teléfono.
-          </p>
+          <Bajada className="mt-3 max-w-xl">
+            El huésped elige las noches, ve el precio, transfiere la seña y sube
+            el comprobante. Vos confirmás desde el teléfono.
+          </Bajada>
 
           <div className="mt-8 flex flex-wrap gap-3">
-            <a
-              href={ENLACE_WHATSAPP}
-              target="_blank"
-              rel="noopener"
-              className="rounded-2xl px-6 py-3.5 font-semibold text-white shadow-sm"
-              style={{ background: MARCA.acento }}
-            >
-              Hablemos por WhatsApp
-            </a>
-            <a
-              href="#por-dentro"
-              className="rounded-2xl border px-6 py-3.5 font-semibold"
-              style={{ borderColor: 'rgba(13,59,62,.2)', color: MARCA.tinta }}
-            >
-              Ver el producto
-            </a>
+            <BotonPrincipal href={ENLACE_WHATSAPP}>Hablemos por WhatsApp</BotonPrincipal>
+            <BotonSecundario href="#producto">Ver el producto</BotonSecundario>
           </div>
 
           {/* Las tres cosas que esta persona pregunta antes de nada. */}
-          <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-sm" style={{ color: MARCA.textoSuave }}>
-            <li>· Sin comisión por reserva</li>
-            <li>· La seña va a tu cuenta</li>
-            <li>· Se usa del celular</li>
+          <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-[13px] font-semibold">
+            {['Sin comisión por reserva', 'La seña va a tu cuenta', 'Se usa del celular'].map((t) => (
+              <li key={t} className="flex items-center gap-2">
+                <Check color={NOCHE.menta} />
+                {t}
+              </li>
+            ))}
           </ul>
+
+          <p className="mt-6 text-sm" style={{ color: NOCHE.textoTenue }}>
+            El sistema con el que {CASO.nombre}, en {CASO.localidad}, toma sus reservas.
+          </p>
         </div>
 
-        {/* Una captura de verdad adentro del marco, no un dibujo: es lo primero
-            que se ve y es donde más vale que sea el producto. */}
         <div className="lg:pl-6">
           <Telefono>
-            <Captura cual="huesped-eligiendo" prioridad sizes="(max-width: 1024px) 90vw, 300px" />
+            <Captura cual="huesped-eligiendo" prioridad sizes="(max-width: 1024px) 80vw, 300px" />
           </Telefono>
-          <p className="mt-3 text-center text-xs" style={{ color: MARCA.textoSuave }}>
+          <p className="mt-4 text-center text-xs" style={{ color: NOCHE.textoTenue }}>
             Captura del {DIA_DE_LAS_CAPTURAS}.{' '}
-            <a className="underline" href={DEMO} target="_blank" rel="noopener">
+            <a className="underline transition hover:text-white" href={DEMO} target="_blank" rel="noopener">
               Abrí el demo y comparalo
             </a>
             .
@@ -196,663 +421,434 @@ function Hero() {
 }
 
 /**
- * La regla, sola, en una franja oscura.
+ * La cinta, con la frase que resume por qué alguien contrata esto.
  *
- * Es lo primero después del hero porque es lo único que ningún competidor de
- * este tamaño puede prometer de verdad, y porque es el miedo concreto del que
- * lee: que dos familias lleguen el mismo día a la misma cabaña.
+ * Se mueve sola y en loop. Es la única animación que corre sin que nadie
+ * scrollee, y está acá porque una página que se mueve apenas carga se siente
+ * viva; con `prefers-reduced-motion` se queda quieta.
  */
-function LaReglaQueNoSePuedeRomper() {
+function Cinta() {
+  const frase = 'Nadie contrata un sistema de reservas. Contrata dejar de perder noches.';
   return (
-    <section id="producto" className="px-5 py-16 sm:px-8" style={{ background: MARCA.tinta, color: 'white' }}>
-      <div className="mx-auto max-w-3xl sm:text-center">
-        <h2 className="text-2xl font-semibold leading-tight sm:text-3xl">
-          Dos reservas sobre la misma noche no pueden pasar.
-          <br />
-          <span style={{ color: MARCA.salvia }}>No «no deberían». No pueden.</span>
-        </h2>
-        <p className="mx-auto mt-5 max-w-2xl leading-relaxed" style={{ color: 'rgba(255,255,255,.78)' }}>
-          La mayoría de los sistemas lo chequean antes de guardar: miran si está
-          libre y, si lo está, guardan. Entre esas dos cosas hay un instante, y
-          en ese instante entran dos reservas. Pasa poco y pasa el fin de semana
-          largo, que es cuando más duele.
-        </p>
-        <p className="mx-auto mt-4 max-w-2xl leading-relaxed" style={{ color: 'rgba(255,255,255,.78)' }}>
-          Acá la regla no está en la página ni en una planilla: está en la base
-          de datos, que <strong>rechaza</strong> la segunda reserva aunque las dos
-          lleguen en el mismo milisegundo. Es la única parte de este sistema que
-          no depende de que nadie se acuerde de nada.
-        </p>
-        <p className="mt-6 text-sm" style={{ color: 'rgba(255,255,255,.5)' }}>
-          Y está probado con dos reservas simultáneas de verdad, en cada cambio
-          que hacemos.
-        </p>
+    <div
+      className="overflow-hidden py-5"
+      style={{ background: NOCHE.fondoHondo, borderTop: `1px solid ${NOCHE.borde}`, borderBottom: `1px solid ${NOCHE.borde}` }}
+    >
+      {/* El contenido va dos veces: cuando el desplazamiento llega al 50 %, el
+          segundo juego está donde arrancó el primero y el ciclo no se nota. */}
+      <div className="cinta flex w-max gap-10 whitespace-nowrap">
+        {[0, 1].map((juego) => (
+          <div key={juego} className="flex gap-10" aria-hidden={juego === 1}>
+            {[0, 1, 2, 3].map((i) => (
+              <span
+                key={i}
+                className="flex items-center gap-10 text-sm font-bold uppercase tracking-[0.18em]"
+                style={{ color: NOCHE.textoTenue }}
+              >
+                {frase}
+                <Punto color={NOCHE.accionViva} />
+              </span>
+            ))}
+          </div>
+        ))}
       </div>
-    </section>
+    </div>
   );
 }
 
 function ElProblema() {
-  const casos = [
+  const preguntas = [
+    '¿Te escribieron por una fecha que ya habías dado?',
+    '¿Tenés fechas bloqueadas y no te acordás por qué?',
+    '¿Contestás «¿está libre?» y «¿cuánto sale?» todo el día?',
+    '¿Alguien reservó, no transfirió, y las noches quedaron tomadas?',
+    '¿Cada cambio de precio se lo tenés que pedir a alguien?',
+    '¿Tenés el calendario en un cuaderno y en la cabeza?',
+  ];
+
+  return (
+    <Seccion id="problema">
+      <div data-revelar>
+        <Rotulo centrado>¿Te suena?</Rotulo>
+        <div className="mt-4">
+          <Titulo centrado acento="esto es para vos">
+            Si contestaste que sí,
+          </Titulo>
+        </div>
+      </div>
+
+      <div className="mt-12 grid gap-4 md:grid-cols-2">
+        {preguntas.map((p, i) => (
+          <div key={p} data-revelar style={{ transitionDelay: `${i * 60}ms` }}>
+            <Tarjeta className="flex items-start gap-3.5">
+              <span
+                className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                style={{ background: 'rgba(209,90,66,.14)' }}
+              >
+                <Cruz color="#e0836a" />
+              </span>
+              <span className="text-[15px] leading-relaxed" style={{ color: NOCHE.textoSuave }}>
+                {p}
+              </span>
+            </Tarjeta>
+          </div>
+        ))}
+      </div>
+    </Seccion>
+  );
+}
+
+/**
+ * El antes y el después, y la única sección clara de la página.
+ *
+ * El corte de color hace dos cosas: descansa la vista en el medio del scroll, y
+ * marca que acá hay un cambio de estado. Es el mismo recurso que usa el molde.
+ */
+function AntesYDespues() {
+  const antes = [
+    'El calendario en un cuaderno',
+    'Comprobantes por WhatsApp',
+    'Contestar precios a mano',
+    'Fechas tomadas por señas que no llegaron',
+    'Cambiar un precio es pedírselo a alguien',
+  ];
+  const despues = [
+    'El calendario lo lleva la base',
+    'El comprobante entra con la reserva',
+    'El precio está en la página',
+    'Las noches se liberan solas al vencer',
+    'Los precios los cargás vos, cuando quieras',
+  ];
+
+  return (
+    <section
+      className="px-6 py-20 md:py-28"
+      style={{ background: MARCA.crema, color: MARCA.texto }}
+    >
+      <div className="mx-auto max-w-6xl">
+        <div data-revelar>
+          <p
+            className="text-center text-[11px] font-bold uppercase tracking-[0.28em]"
+            style={{ color: MARCA.acentoHondo }}
+          >
+            El cambio
+          </p>
+          <h2 className="mt-4 text-center text-[1.9rem] font-black italic uppercase leading-[1.02] tracking-[-0.03em] sm:text-4xl lg:text-5xl">
+            Lo mismo, pero{' '}
+            <span style={{ color: MARCA.acento }}>sin vos en el medio</span>
+          </h2>
+        </div>
+
+        <div className="mt-12 grid gap-6 md:grid-cols-2">
+          <div data-revelar>
+            <div
+              className="h-full rounded-2xl p-6"
+              style={{ background: 'white', border: `1px solid rgba(0,0,0,.08)` }}
+            >
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em]" style={{ color: MARCA.textoSuave }}>
+                Hoy
+              </p>
+              <ul className="mt-5 space-y-3.5">
+                {antes.map((t) => (
+                  <li key={t} className="flex items-start gap-3 text-[15px]" style={{ color: MARCA.textoSuave }}>
+                    <Cruz color="#c0563c" />
+                    {t}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          <div data-revelar style={{ transitionDelay: '120ms' }}>
+            <div
+              className="h-full rounded-2xl p-6"
+              style={{ background: 'white', border: `1px solid ${MARCA.tinta}33`, boxShadow: '0 12px 40px rgba(13,59,62,.10)' }}
+            >
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em]" style={{ color: MARCA.tinta }}>
+                Con AlojaOS
+              </p>
+              <ul className="mt-5 space-y-3.5">
+                {despues.map((t) => (
+                  <li key={t} className="flex items-start gap-3 text-[15px] font-semibold">
+                    <Check color={MARCA.tinta} />
+                    {t}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ComoEmpezas() {
+  const pasos = [
     {
-      titulo: '«Me reservaron dos veces la misma cabaña»',
-      texto:
-        'No puede pasar, y no por cuidado: la base rechaza la segunda. Es lo de arriba.',
+      titulo: 'Una charla de veinte minutos',
+      texto: 'Cuántas unidades tenés, cómo cobrás y qué reglas de temporada manejás. De ahí sale el número.',
     },
     {
-      titulo: '«No sé quién transfirió y quién no»',
-      texto:
-        'Cada seña tiene su plazo. El huésped sube el comprobante y lo ve confirmado en su pantalla; vos lo abrís desde el panel. Si el plazo pasa sin transferencia, las noches se liberan solas.',
+      titulo: 'Lo cargamos nosotros',
+      texto: 'Tus unidades, tus precios, tus mínimos, tus datos de transferencia y tus colores. No arrancás con un formulario vacío.',
     },
     {
-      titulo: '«Tengo fechas bloqueadas y no me acuerdo por qué»',
-      texto:
-        'Un bloqueo tuyo es una fila con su motivo escrito. Desbloquear cambia esa fila y el sistema te dice cuántas liberó, no «listo».',
-    },
-    {
-      titulo: '«Cada vez que cambio un precio tengo que avisarle a alguien»',
-      texto:
-        'Precios, mínimos de noches y días de entrada son datos tuyos. Temporada alta con mínimo de 7 noches entrando sábado o domingo se carga una vez y la página la respeta.',
-    },
-    {
-      titulo: '«La página dice una cosa y la realidad es otra»',
-      texto:
-        'Una estadía que cruza de temporada se cobra cada noche según su fecha, y la pantalla lo explica. Si una unidad no tiene tarifa cargada, lo dice: no inventa un precio.',
-    },
-    {
-      titulo: '«Contesto las mismas cuatro preguntas todo el día»',
-      texto:
-        '¿Está libre? ¿Cuánto sale? ¿Cuánto es la seña? ¿A dónde transfiero? Las cuatro están en la página, antes de que te escriba.',
+      titulo: 'Lo probás y lo publicás',
+      texto: 'Reservás vos mismo de punta a punta antes de que exista para nadie. Si algo está mal, se cambia ahí.',
     },
   ];
 
   return (
-    <section className="px-5 py-16 sm:px-8 sm:py-20">
-      <div className="mx-auto max-w-5xl">
-        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Si esto te pasó, es para vos</h2>
-        <div className="mt-8 grid gap-x-10 gap-y-7 sm:grid-cols-2">
-          {casos.map((c) => (
-            <div key={c.titulo}>
-              <h3 className="font-semibold" style={{ color: MARCA.tinta }}>
-                {c.titulo}
-              </h3>
-              <p className="mt-1.5 text-sm leading-relaxed" style={{ color: MARCA.textoSuave }}>
-                {c.texto}
+    <Seccion hondo>
+      <div data-revelar>
+        <Rotulo centrado>Cómo arrancamos</Rotulo>
+        <div className="mt-4">
+          <Titulo centrado acento="andando">
+            De la primera charla a tu página
+          </Titulo>
+        </div>
+      </div>
+
+      <div className="mt-12 grid gap-5 md:grid-cols-3">
+        {pasos.map((p, i) => (
+          <div key={p.titulo} data-revelar style={{ transitionDelay: `${i * 90}ms` }}>
+            <Tarjeta className="h-full">
+              <div className="flex items-center gap-3">
+                <span
+                  className="flex h-9 w-9 items-center justify-center rounded-xl text-sm font-black"
+                  style={{ background: `${NOCHE.menta}18`, color: NOCHE.menta }}
+                >
+                  {i + 1}
+                </span>
+              </div>
+              <h3 className="mt-4 text-[17px] font-bold uppercase tracking-tight">{p.titulo}</h3>
+              <p className="mt-2 text-sm leading-relaxed" style={{ color: NOCHE.textoSuave }}>
+                {p.texto}
               </p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function PorDentro() {
-  return (
-    <section
-      id="por-dentro"
-      className="border-y px-5 py-16 sm:px-8 sm:py-20"
-      style={{ borderColor: 'rgba(0,0,0,.07)', background: MARCA.cremaHonda }}
-    >
-      <div className="mx-auto max-w-5xl">
-        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          Esto es el producto, no una maqueta
-        </h2>
-        <p className="mt-3 max-w-2xl leading-relaxed" style={{ color: MARCA.textoSuave }}>
-          Las pantallas de abajo son capturas del sistema andando, sacadas el{' '}
-          {DIA_DE_LAS_CAPTURAS}. No son dibujos ni una idea de cómo va a quedar:{' '}
-          <a className="underline" href={DEMO} target="_blank" rel="noopener">
-            el demo está abierto
-          </a>{' '}
-          y podés reservar vos mismo ahora.
-        </p>
-
-        {/* Los dos pasos del huésped van en teléfonos porque el huésped entra
-            desde el teléfono. El del dueño va ancho porque es una lista para
-            decidir, y achicarla a 300 px escondería justo lo que importa. */}
-        <div className="mt-10 grid gap-10 md:grid-cols-2">
-          <Paso
-            n={1}
-            titulo="Elige las noches"
-            texto="El calendario ya sabe qué está tomado, cuál es el mínimo del tramo y qué días se puede entrar. Nada de eso se explica después de completar un formulario."
-          >
-            <Telefono>
-              <Captura cual="huesped-eligiendo" sizes="(max-width: 768px) 80vw, 300px" />
-            </Telefono>
-          </Paso>
-          <Paso
-            n={2}
-            titulo="Transfiere y sube el comprobante"
-            texto="Ve el monto exacto de la seña, tu alias y tu CBU, y hasta cuándo tiene. Sube la foto desde el celular y la pantalla le confirma que el sistema la tiene."
-          >
-            <Telefono>
-              <Captura cual="huesped-transferir" sizes="(max-width: 768px) 80vw, 300px" />
-            </Telefono>
-          </Paso>
-        </div>
-
-        <div className="mt-12">
-          <Paso
-            n={3}
-            titulo="Vos confirmás"
-            texto="Desde el teléfono o desde la computadora. Ves el comprobante, confirmás, y la reserva queda. O la rechazás con un motivo y las noches se liberan al instante."
-          >
-            <Marco>
-              <Captura cual="panel-senas" sizes="(max-width: 1024px) 92vw, 900px" />
-            </Marco>
-          </Paso>
-        </div>
-
-        <div className="mt-16">
-          <h3 className="text-xl font-semibold tracking-tight">Y lo de adentro lo manejás vos</h3>
-          <p className="mt-2 max-w-2xl leading-relaxed" style={{ color: MARCA.textoSuave }}>
-            Los precios de la temporada que viene los decidís en diciembre, muchas
-            veces un domingo. Si para cambiarlos tenés que escribirnos, no los
-            cambiás: quedás vendiendo enero a precio de octubre. Por eso están en
-            tu panel y no en el nuestro.
-          </p>
-          {/* Una abajo de la otra y no al lado: la de precios es alta y la de
-              fechas es una franja: en dos columnas quedan desparejas. */}
-          <div className="mt-8 space-y-6">
-            <Marco>
-              <Captura cual="panel-precios" sizes="(max-width: 1024px) 92vw, 900px" />
-            </Marco>
-            <Marco>
-              <Captura cual="panel-fechas" sizes="(max-width: 1024px) 92vw, 900px" />
-            </Marco>
+            </Tarjeta>
           </div>
-          <p className="mt-5 text-sm leading-relaxed" style={{ color: MARCA.textoSuave }}>
-            Fijate el aviso rojo de la primera: el sistema cuenta las noches que
-            quedarían sin precio y te dice qué unidad no se puede reservar. Una
-            unidad sin tarifa se muestra libre en el calendario igual, y el que
-            no pudo reservar no escribe para avisarte: se va. Y abajo, una
-            semana cerrada con el motivo escrito, para que en marzo sepas por
-            qué estaba cerrada.
+        ))}
+      </div>
+    </Seccion>
+  );
+}
+
+function ElPanel() {
+  return (
+    <Seccion id="producto">
+      <div className="grid items-center gap-12 lg:grid-cols-[.92fr_1.08fr]">
+        <div data-revelar>
+          <Rotulo>Para vos</Rotulo>
+          <div className="mt-4">
+            <Titulo acento="en una pantalla">Todo tu complejo,</Titulo>
+          </div>
+          <Bajada className="mt-5 max-w-lg">
+            Las señas que esperan, con su comprobante y su plazo. Dos botones:
+            confirmar y rechazar. Lo demás —precios, fechas cerradas, tus datos,
+            tus colores— lo tocás cuando querés.
+          </Bajada>
+
+          <ul className="mt-7 space-y-2.5">
+            {[
+              'Confirmar o rechazar una seña',
+              'Precios por temporada',
+              'Cerrar fechas, con el motivo escrito',
+              'Mínimos de noches y días de entrada',
+              'Tus colores y tu tipografía',
+            ].map((t) => (
+              <Fila key={t}>{t}</Fila>
+            ))}
+          </ul>
+        </div>
+
+        <div className="space-y-5" data-revelar style={{ transitionDelay: '120ms' }}>
+          <Marco>
+            <Captura cual="panel-senas" sizes="(max-width: 1024px) 90vw, 600px" />
+          </Marco>
+          <Marco>
+            <Captura cual="panel-precios" sizes="(max-width: 1024px) 90vw, 600px" />
+          </Marco>
+          <p className="text-sm leading-relaxed" style={{ color: NOCHE.textoTenue }}>
+            El aviso rojo de la segunda es el sistema contando las noches que
+            quedarían sin precio. Una unidad sin tarifa se muestra libre igual, y
+            el que no pudo reservar no escribe para avisarte: se va.
           </p>
         </div>
+      </div>
+    </Seccion>
+  );
+}
+
+function LaPaginaDelHuesped() {
+  return (
+    <Seccion hondo>
+      <div className="grid items-center gap-12 lg:grid-cols-[1fr_1fr]">
+        <div className="order-2 lg:order-1" data-revelar>
+          <Telefono>
+            <Captura cual="huesped-transferir" sizes="(max-width: 1024px) 80vw, 300px" />
+          </Telefono>
+        </div>
+
+        <div className="order-1 lg:order-2" data-revelar style={{ transitionDelay: '100ms' }}>
+          <Rotulo>Para tu huésped</Rotulo>
+          <div className="mt-4">
+            <Titulo acento="a las tres de la mañana">Que pueda reservar</Titulo>
+          </div>
+          <Bajada className="mt-5 max-w-lg">
+            Ve qué está libre, cuánto sale, cuánto es la seña y a dónde
+            transferir. Sube la foto del comprobante desde el celular y la
+            pantalla le confirma que el sistema la tiene.
+          </Bajada>
+
+          <ul className="mt-7 space-y-2.5">
+            {[
+              'El calendario sabe qué está tomado',
+              'El precio, antes de dejar los datos',
+              'Tu alias y tu CBU, con el plazo de la seña',
+              'El comprobante, desde el teléfono',
+            ].map((t) => (
+              <Fila key={t}>{t}</Fila>
+            ))}
+          </ul>
+
+          <p className="mt-6 text-sm" style={{ color: NOCHE.textoTenue }}>
+            Capturas del {DIA_DE_LAS_CAPTURAS}.{' '}
+            <a className="underline transition hover:text-white" href={DEMO} target="_blank" rel="noopener">
+              El demo está abierto
+            </a>
+            : reservá vos mismo.
+          </p>
+        </div>
+      </div>
+    </Seccion>
+  );
+}
+
+/**
+ * La regla, sola, en una franja de acento.
+ *
+ * Es lo único que ningún competidor de este tamaño puede prometer de verdad, y
+ * es el miedo concreto del que lee: que dos familias lleguen el mismo día a la
+ * misma cabaña. Va en una franja de color y con una sola frase porque mezclada
+ * entre otras diez ventajas se pierde.
+ */
+function LaRegla() {
+  return (
+    <section className="px-6 py-20 md:py-24" style={{ background: NOCHE.accion }}>
+      <div className="mx-auto max-w-4xl text-center" data-revelar>
+        <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-white/70">
+          La regla que no se puede romper
+        </p>
+        <h2 className="mt-5 text-[1.9rem] font-black italic uppercase leading-[1.02] tracking-[-0.03em] text-white sm:text-4xl lg:text-5xl">
+          Nunca dos reservas sobre la misma unidad y la misma noche
+        </h2>
+        <p className="mx-auto mt-6 max-w-2xl leading-relaxed text-white/85">
+          No lo garantiza un cartel ni una revisión antes de guardar: lo
+          garantiza la base de datos, con una restricción. Dos personas que
+          aprietan «reservar» en el mismo segundo no pueden pasar las dos,
+          aunque el sistema esté saturado.
+        </p>
       </div>
     </section>
   );
 }
 
-/** Un paso, con su pantalla arriba y su explicación abajo. */
-function Paso({
-  n,
-  titulo,
-  texto,
-  children,
-}: {
-  n: number;
-  titulo: string;
-  texto: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      {children}
-      <h3 className="mt-5 flex items-baseline gap-2 font-semibold">
-        <span
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
-          style={{ background: MARCA.tinta }}
-        >
-          {n}
-        </span>
-        {titulo}
-      </h3>
-      <p className="mt-1.5 max-w-prose text-sm leading-relaxed" style={{ color: MARCA.textoSuave }}>
-        {texto}
-      </p>
-    </div>
-  );
-}
-
-/**
- * El marco de las capturas anchas.
- *
- * `overflow-hidden` con el mismo radio que el borde: sin eso la esquina de la
- * imagen sobresale del borde redondeado y se ve como un error de maquetación.
- */
-function Marco({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      className="overflow-hidden rounded-2xl border shadow-sm"
-      style={{ borderColor: 'rgba(0,0,0,.08)', background: 'white' }}
-    >
-      {children}
-    </div>
-  );
-}
-
-/**
- * El caso. Esta sección es la credibilidad de toda la página.
- *
- * Son dos cosas y van en este orden: que el sistema corre en un complejo de
- * verdad —con nombre, con dirección, con dueños que atienden—, y que antes de
- * convertirlo en producto lo auditamos y encontramos tres errores que contamos
- * acá con nombre y apellido.
- *
- * El segundo es el que convence. Un proveedor que te muestra los tres errores
- * que encontró y cómo los cerró es más creíble que uno que te dice que su
- * sistema es excelente, sobre todo para alguien a quien ya le prometieron uno
- * excelente.
- *
- * Lo que no hay —ni va a haber— es un testimonio ni un número de resultados.
- * El motivo está escrito en `src/lib/caso.ts`, que es además el único archivo
- * del repo donde puede estar el nombre de un cliente.
- */
 function ElCaso() {
   return (
-    <section id="caso" className="px-5 py-16 sm:px-8 sm:py-20">
+    <Seccion id="caso">
       <div className="mx-auto max-w-3xl">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: MARCA.acento }}>
-          El complejo del que salió
-        </p>
-        <h2 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">
-          {CASO.nombre} toma sus reservas con este sistema
-        </h2>
-        <p className="mt-4 leading-relaxed" style={{ color: MARCA.textoSuave }}>
-          {CASO.unidades} cabañas en {CASO.localidad}, {CASO.provincia}, atendidas
-          por sus dueños. AlojaOS es ese sistema: el mismo que viene andando ahí,
-          auditado entero y vuelto a escribir para que lo pueda usar cualquier
-          complejo de 3 a 15 unidades.
-        </p>
+        <div data-revelar>
+          <Rotulo>El complejo del que salió</Rotulo>
+          <div className="mt-4">
+            <Titulo acento="con este sistema">{CASO.nombre} toma sus reservas</Titulo>
+          </div>
+          <Bajada className="mt-5">
+            {CASO.unidades} cabañas en {CASO.localidad}, {CASO.provincia}, atendidas
+            por sus dueños. AlojaOS es ese sistema: el mismo que viene andando
+            ahí, auditado entero y vuelto a escribir para que lo pueda usar
+            cualquier complejo de 3 a 15 unidades.
+          </Bajada>
 
-        <ul className="mt-6 grid gap-x-8 gap-y-3 sm:grid-cols-2">
-          {CASO.queHace.map((q) => (
-            <li key={q} className="flex gap-2.5 text-sm leading-relaxed">
-              <span aria-hidden style={{ color: MARCA.acento }}>
-                ·
-              </span>
-              <span style={{ color: MARCA.textoSuave }}>{q}</span>
+          <ul className="mt-7 grid gap-x-8 gap-y-3 sm:grid-cols-2">
+            {CASO.queHace.map((q) => (
+              <li key={q} className="flex items-start gap-3 text-sm leading-relaxed" style={{ color: NOCHE.textoSuave }}>
+                <Check color={NOCHE.menta} />
+                {q}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="mt-16" data-revelar>
+          <Rotulo>La auditoría</Rotulo>
+          <h3 className="mt-4 text-2xl font-black italic uppercase tracking-[-0.03em] sm:text-3xl">
+            Tres errores que encontramos, y cómo quedaron
+          </h3>
+          <Bajada className="mt-4">
+            Contarlos es más útil que decir que el sistema es excelente —sobre
+            todo para alguien a quien ya le prometieron uno excelente—.
+          </Bajada>
+        </div>
+
+        <ul className="mt-9 space-y-4">
+          {HALLAZGOS.map((h, i) => (
+            <li key={h.titulo} data-revelar style={{ transitionDelay: `${i * 80}ms` }}>
+              <Tarjeta>
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <h4 className="font-bold">{h.titulo}</h4>
+                  <span
+                    className="rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider"
+                    style={{ background: 'rgba(209,90,66,.16)', color: '#e0836a' }}
+                  >
+                    {h.cuanto}
+                  </span>
+                </div>
+                <p className="mt-2.5 text-sm leading-relaxed" style={{ color: NOCHE.textoSuave }}>
+                  {h.texto}
+                </p>
+                <p className="mt-3 text-sm leading-relaxed">
+                  <strong style={{ color: NOCHE.menta }}>Cómo quedó:</strong>{' '}
+                  <span style={{ color: NOCHE.textoSuave }}>{h.comoSeArreglo}</span>
+                </p>
+              </Tarjeta>
             </li>
           ))}
         </ul>
 
-        <h3 className="mt-14 text-xl font-semibold tracking-tight">
-          Y antes de venderlo lo auditamos entero
-        </h3>
-        <p className="mt-3 leading-relaxed" style={{ color: MARCA.textoSuave }}>
-          Esto es lo que encontramos. Está acá porque es la razón por la que este
-          producto está escrito como está:
-        </p>
-
-        <ul className="mt-8 space-y-6">
-          {HALLAZGOS.map((h) => (
-            <Hallazgo key={h.titulo} {...h} />
-          ))}
-        </ul>
-
-        <p className="mt-8 rounded-2xl p-5 text-sm leading-relaxed" style={{ background: MARCA.cremaHonda }}>
-          Los tres tienen la misma forma: <strong>algo contestaba que estaba bien
-          sin estarlo.</strong> Ninguno tiraba un error, ninguno aparecía en una
-          pantalla, y los tres duraron meses porque la única forma de notarlos era
-          que alguien fuera a buscar. Es la clase de falla que no se arregla
-          revisando mejor: se arregla haciendo que la operación no pueda decir que
-          hizo algo sin haberlo hecho.
-        </p>
+        <div className="mt-8" data-revelar>
+          <Tarjeta>
+            <p className="text-sm leading-relaxed" style={{ color: NOCHE.textoSuave }}>
+              Los tres tienen la misma forma:{' '}
+              <strong style={{ color: NOCHE.texto }}>algo contestaba que estaba bien sin estarlo.</strong>{' '}
+              Ninguno tiraba un error y los tres duraron meses, porque la única
+              forma de notarlos era que alguien fuera a buscar. Esa clase de
+              falla no se arregla revisando mejor: se arregla haciendo que la
+              operación no pueda decir que hizo algo sin haberlo hecho.
+            </p>
+          </Tarjeta>
+        </div>
       </div>
-    </section>
-  );
-}
-
-function Hallazgo({
-  titulo,
-  cuanto,
-  texto,
-  comoSeArreglo,
-}: {
-  titulo: string;
-  cuanto: string;
-  texto: string;
-  comoSeArreglo: string;
-}) {
-  return (
-    <li className="border-l-2 pl-5" style={{ borderColor: MARCA.acento }}>
-      <div className="flex flex-wrap items-baseline gap-x-3">
-        <h3 className="font-semibold">{titulo}</h3>
-        <span
-          className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
-          style={{ background: 'rgba(194,90,52,.12)', color: MARCA.acentoHondo }}
-        >
-          {cuanto}
-        </span>
-      </div>
-      <p className="mt-1.5 text-sm leading-relaxed" style={{ color: MARCA.textoSuave }}>
-        {texto}
-      </p>
-      <p className="mt-2 text-sm leading-relaxed" style={{ color: MARCA.tinta }}>
-        <strong>Cómo quedó:</strong> {comoSeArreglo}
-      </p>
-    </li>
+    </Seccion>
   );
 }
 
 function LaCuenta() {
   return (
-    <section
-      id="cuenta"
-      className="border-y px-5 py-16 sm:px-8 sm:py-20"
-      style={{ borderColor: 'rgba(0,0,0,.07)', background: MARCA.cremaHonda }}
-    >
-      <div className="mx-auto max-w-5xl">
-        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          ¿Cuánto te cuesta una noche que no pudiste vender?
-        </h2>
-        <p className="mt-3 max-w-2xl leading-relaxed" style={{ color: MARCA.textoSuave }}>
+    <Seccion id="cuenta" hondo>
+      <div data-revelar>
+        <Rotulo centrado>La cuenta</Rotulo>
+        <div className="mt-4">
+          <Titulo centrado acento="que no pudiste vender?">¿Cuánto te cuesta una noche</Titulo>
+        </div>
+        <Bajada centrado className="mt-5 max-w-2xl">
           Movelo con tus números. No te pedimos el mail para ver el resultado.
-        </p>
-        <div className="mt-8">
-          <Calculadora />
-        </div>
+        </Bajada>
       </div>
-    </section>
-  );
-}
-
-function UnDiaCualquiera() {
-  const filas = [
-    {
-      hora: '09:40',
-      sin: 'Te escriben por Instagram: «¿tienen libre del 10 al 17?». Abrís la planilla en el celular.',
-      con: 'Entra una reserva. El calendario ya le dijo que esas noches están tomadas y eligió otras.',
-    },
-    {
-      hora: '11:15',
-      sin: 'Otro mensaje, mismas fechas. Contestás que sí sin acordarte del primero.',
-      con: 'Nada que hacer: la base no deja que dos tomen la misma noche.',
-    },
-    {
-      hora: '14:00',
-      sin: '«¿Cuánto es la seña?» Abrís la calculadora del teléfono.',
-      con: 'El huésped ya vio el total, la seña y tu CBU, y transfirió.',
-    },
-    {
-      hora: '18:30',
-      sin: 'Te llega una foto de un comprobante por WhatsApp. La guardás en una carpeta.',
-      con: 'El comprobante está en la reserva. Lo abrís, confirmás, y queda.',
-    },
-    {
-      hora: '23:00',
-      sin: 'Repasás la planilla para ver quién transfirió y quién no. Hay tres fechas bloqueadas que no te acordás por qué.',
-      con: 'Las señas que no llegaron vencieron solas y esas noches ya están a la venta.',
-    },
-  ];
-
-  return (
-    <section className="px-5 py-16 sm:px-8 sm:py-20">
-      <div className="mx-auto max-w-5xl">
-        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          Lo que cambia no son las funciones, es el día
-        </h2>
-
-        <div className="mt-8 overflow-hidden rounded-2xl ring-1" style={{ ringColor: 'rgba(0,0,0,.07)' } as React.CSSProperties}>
-          <div className="grid grid-cols-1 sm:grid-cols-[4rem_1fr_1fr]">
-            <div className="hidden sm:block" style={{ background: MARCA.cremaHonda }} />
-            <div
-              className="hidden px-5 py-3 text-xs font-semibold tracking-wide sm:block"
-              style={{ background: MARCA.cremaHonda, color: MARCA.textoSuave }}
-            >
-              Hoy
-            </div>
-            <div
-              className="hidden px-5 py-3 text-xs font-semibold tracking-wide sm:block"
-              style={{ background: MARCA.tinta, color: 'rgba(255,255,255,.8)' }}
-            >
-              Con AlojaOS
-            </div>
-
-            {filas.map((f) => (
-              <div key={f.hora} className="contents">
-                <div
-                  className="border-t px-5 py-3 text-xs font-semibold tabular-nums sm:px-3"
-                  style={{ borderColor: 'rgba(0,0,0,.07)', background: MARCA.cremaHonda, color: MARCA.textoSuave }}
-                >
-                  {f.hora}
-                </div>
-                <div
-                  className="border-t px-5 py-3 text-sm leading-relaxed"
-                  style={{ borderColor: 'rgba(0,0,0,.07)', background: 'white', color: MARCA.textoSuave }}
-                >
-                  <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide opacity-50 sm:hidden">
-                    Hoy
-                  </span>
-                  {f.sin}
-                </div>
-                <div
-                  className="border-t px-5 py-3 text-sm leading-relaxed"
-                  style={{ borderColor: 'rgba(255,255,255,.12)', background: MARCA.tinta, color: 'rgba(255,255,255,.88)' }}
-                >
-                  <span className="mb-1 block text-[10px] font-semibold tracking-wide opacity-60 sm:hidden">
-                    Con AlojaOS
-                  </span>
-                  {f.con}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+      <div className="mt-12" data-revelar>
+        <Calculadora />
       </div>
-    </section>
-  );
-}
-
-function Comparacion() {
-  const filas: Array<{ que: string; planilla: string; portales: string; aloja: string }> = [
-    {
-      que: 'Doble reserva',
-      planilla: 'Depende de que te acuerdes',
-      portales: 'No pasa, pero sólo en su canal',
-      aloja: 'La base la rechaza',
-    },
-    {
-      que: 'Comisión por reserva',
-      planilla: 'Ninguna',
-      portales: '15 % a 18 %',
-      aloja: 'Ninguna',
-    },
-    {
-      que: 'Dónde cae la seña',
-      planilla: 'Tu cuenta',
-      portales: 'Pasa por ellos',
-      aloja: 'Tu cuenta, directo',
-    },
-    {
-      que: 'Quién es el dueño del huésped',
-      planilla: 'Vos',
-      portales: 'Ellos: no te dan el mail',
-      aloja: 'Vos',
-    },
-    {
-      que: 'Tu marca',
-      planilla: '—',
-      portales: 'La de ellos',
-      aloja: 'Tu nombre, tus colores, tu dirección',
-    },
-    {
-      que: 'Señas vencidas',
-      planilla: 'Las revisás a mano',
-      portales: 'No manejan seña por transferencia',
-      aloja: 'Se liberan solas',
-    },
-    {
-      que: 'Reglas de temporada',
-      planilla: 'En tu cabeza',
-      portales: 'Sí, con sus formatos',
-      aloja: 'Mínimos y días de entrada, por tramo',
-    },
-  ];
-
-  return (
-    <section
-      id="comparacion"
-      className="border-y px-5 py-16 sm:px-8 sm:py-20"
-      style={{ borderColor: 'rgba(0,0,0,.07)', background: MARCA.cremaHonda }}
-    >
-      <div className="mx-auto max-w-5xl">
-        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          Contra qué lo estás comparando
-        </h2>
-        <p className="mt-3 max-w-2xl leading-relaxed" style={{ color: MARCA.textoSuave }}>
-          Los portales no son el enemigo y conviene decirlo: te traen gente que
-          no te conoce. Lo que no conviene es que sean tu único canal, porque la
-          comisión se la llevan también de los huéspedes que ya eran tuyos.
-        </p>
-
-        <div className="mt-8 overflow-x-auto">
-          <table className="w-full min-w-[640px] border-collapse text-sm">
-            <thead>
-              <tr>
-                <th className="w-[26%] px-4 py-3 text-left font-semibold" />
-                <th className="px-4 py-3 text-left font-semibold" style={{ color: MARCA.textoSuave }}>
-                  Planilla y WhatsApp
-                </th>
-                <th className="px-4 py-3 text-left font-semibold" style={{ color: MARCA.textoSuave }}>
-                  Booking / Airbnb
-                </th>
-                <th
-                  className="rounded-t-xl px-4 py-3 text-left font-semibold text-white"
-                  style={{ background: MARCA.tinta }}
-                >
-                  AlojaOS
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filas.map((f, i) => (
-                <tr key={f.que}>
-                  <th className="border-t px-4 py-3 text-left align-top font-medium" style={{ borderColor: 'rgba(0,0,0,.08)' }}>
-                    {f.que}
-                  </th>
-                  <td className="border-t px-4 py-3 align-top" style={{ borderColor: 'rgba(0,0,0,.08)', color: MARCA.textoSuave }}>
-                    {f.planilla}
-                  </td>
-                  <td className="border-t px-4 py-3 align-top" style={{ borderColor: 'rgba(0,0,0,.08)', color: MARCA.textoSuave }}>
-                    {f.portales}
-                  </td>
-                  <td
-                    className={`px-4 py-3 align-top font-medium text-white ${i === filas.length - 1 ? 'rounded-b-xl' : ''}`}
-                    style={{ background: MARCA.tinta, borderTop: '1px solid rgba(255,255,255,.12)' }}
-                  >
-                    {f.aloja}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function PorQueNosotros() {
-  const razones = [
-    {
-      titulo: 'No cobramos comisión',
-      texto:
-        'Ni por reserva ni por huésped. La seña va a tu cuenta y no la tocamos. Lo que pagás es el sistema, y es el mismo número vendas mucho o poco.',
-    },
-    {
-      titulo: 'Tus huéspedes son tuyos',
-      texto:
-        'El nombre, el mail y el teléfono de cada uno están en tu base, y te los podés llevar. No es una cortesía: es tu lista de clientes.',
-    },
-    {
-      titulo: 'Un complejo no ve nada de otro',
-      texto:
-        'Cada complejo está aislado en la base, no por un filtro que alguien se puede olvidar de poner. Lo probamos con dos cuentas de verdad pidiendo los datos de la otra, y no los ve.',
-    },
-    {
-      titulo: 'El sistema te dice cuando se rompe',
-      texto:
-        'Si el reloj de los vencimientos se para, el panel te lo dice. Si no se pueden guardar comprobantes, te lo dice. Si a un huésped no le llegó su mail, te dice a quién escribirle.',
-    },
-    {
-      titulo: 'Somos dos personas en Mar del Plata',
-      texto:
-        'Nos escribís y te contestamos nosotros, no un ticket. La contra es que no somos una empresa de cien personas; si eso es lo que buscás, mejor decirlo ahora.',
-    },
-    {
-      titulo: 'Sin permanencia',
-      texto:
-        'Te vas cuando quieras y te llevás tus datos. Un sistema que te retiene porque es difícil salirse no es un sistema que elegiste.',
-    },
-  ];
-
-  return (
-    <section className="px-5 py-16 sm:px-8 sm:py-20">
-      <div className="mx-auto max-w-5xl">
-        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Por qué elegirnos</h2>
-        <div className="mt-8 grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
-          {razones.map((r) => (
-            <div key={r.titulo}>
-              <h3 className="font-semibold" style={{ color: MARCA.tinta }}>
-                {r.titulo}
-              </h3>
-              <p className="mt-1.5 text-sm leading-relaxed" style={{ color: MARCA.textoSuave }}>
-                {r.texto}
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ComoArrancamos() {
-  const pasos = [
-    {
-      titulo: 'Una charla',
-      texto:
-        'Veinte minutos por teléfono o por video. Nos contás cuántas unidades tenés, cómo cobrás y qué reglas de temporada manejás. De ahí sale el número y si esto te sirve o no.',
-    },
-    {
-      titulo: 'Lo cargamos nosotros',
-      texto:
-        'Tus unidades, tus precios por temporada, los mínimos de noches, los días de entrada, tus datos de transferencia y tus colores. No te dejamos solo frente a un formulario vacío.',
-    },
-    {
-      titulo: 'Lo mirás antes de que exista para nadie',
-      texto:
-        'Te mandamos tu dirección con todo cargado. Reservás vos mismo una vez de punta a punta para ver qué ve un huésped. Si algo está mal, se cambia ahí.',
-    },
-    {
-      titulo: 'Lo publicás',
-      texto:
-        'Pones la dirección en tu Instagram y en tu WhatsApp. Nosotros seguimos del otro lado: si algo no anda, lo arreglamos sin que tengas que explicarlo dos veces.',
-    },
-  ];
-
-  return (
-    <section
-      className="border-y px-5 py-16 sm:px-8 sm:py-20"
-      style={{ borderColor: 'rgba(0,0,0,.07)', background: MARCA.cremaHonda }}
-    >
-      <div className="mx-auto max-w-4xl">
-        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          De la primera charla a tu página andando
-        </h2>
-        <ol className="mt-8 space-y-6">
-          {pasos.map((p, i) => (
-            <li key={p.titulo} className="flex gap-5">
-              <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-semibold text-white"
-                style={{ background: MARCA.tinta }}
-              >
-                {i + 1}
-              </span>
-              <div>
-                <h3 className="font-semibold">{p.titulo}</h3>
-                <p className="mt-1 text-sm leading-relaxed" style={{ color: MARCA.textoSuave }}>
-                  {p.texto}
-                </p>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </div>
-    </section>
+    </Seccion>
   );
 }
 
@@ -861,150 +857,102 @@ function Precio() {
     ...p,
     porTemporada: Math.round((p.mensual * MESES_QUE_SE_PAGAN_POR_ANIO) / CUOTAS_DE_TEMPORADA),
   }));
+  const plata = (n: number) =>
+    new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(n);
 
   return (
-    <section
-      id="precio"
-      className="px-5 py-16 sm:px-8 sm:py-20"
-      style={{ background: MARCA.tinta, color: 'white' }}
-    >
-      <div className="mx-auto max-w-5xl">
-        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Cuánto cuesta</h2>
-        <p className="mt-3 max-w-2xl leading-relaxed" style={{ color: 'rgba(255,255,255,.75)' }}>
-          Por cantidad de unidades, no por cantidad de reservas. Las reservas de
-          un complejo son cuarenta en enero y dos en junio; las unidades son las
-          mismas todo el año, así que tu factura también.
-        </p>
+    <Seccion id="precio">
+      <div data-revelar>
+        <Rotulo centrado>Precio</Rotulo>
+        <div className="mt-4">
+          <Titulo centrado acento="y sin comisión">Un número por mes,</Titulo>
+        </div>
+        <Bajada centrado className="mt-5 max-w-2xl">
+          Pagás {MESES_QUE_SE_PAGAN_POR_ANIO} meses al año: los dos de temporada
+          baja van sin cargo. Y si preferís, los {MESES_QUE_SE_PAGAN_POR_ANIO}{' '}
+          se juntan en {CUOTAS_DE_TEMPORADA} cuotas de temporada.
+        </Bajada>
+      </div>
 
-        <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {anual.map((p) => (
+      <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+        {anual.map((p, i) => (
+          <div key={p.nombre} data-revelar style={{ transitionDelay: `${i * 70}ms` }}>
             <div
-              key={p.nombre}
-              className="flex flex-col rounded-2xl p-6"
-              style={
-                p.destacado
-                  ? { background: 'white', color: MARCA.texto }
-                  : { background: 'rgba(255,255,255,.07)' }
-              }
+              className="flex h-full flex-col rounded-2xl p-6"
+              style={{
+                background: p.destacado ? `${NOCHE.menta}0f` : NOCHE.tarjeta,
+                border: `1px solid ${p.destacado ? `${NOCHE.menta}55` : NOCHE.borde}`,
+              }}
             >
-              {p.destacado && (
-                <span
-                  className="mb-3 inline-block w-fit rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white"
-                  style={{ background: MARCA.acento }}
-                >
-                  El más elegido
-                </span>
-              )}
-              <h3 className="text-lg font-semibold">{p.nombre}</h3>
-              <p className="text-sm" style={{ opacity: 0.6 }}>
+              {/* El hueco de la cinta existe en las cuatro tarjetas, tenga o
+                  no cinta: si sólo lo tuviera la destacada, esa tarjeta
+                  empujaría su contenido y los cuatro precios quedarían a
+                  cuatro alturas distintas. Lo mismo con el alto mínimo de la
+                  línea de unidades, que en un plan ocupa dos renglones. */}
+              <div className="mb-3 h-[22px]">
+                {p.destacado && (
+                  <span
+                    className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em]"
+                    style={{ background: `${NOCHE.menta}1f`, color: NOCHE.menta }}
+                  >
+                    El más elegido
+                  </span>
+                )}
+              </div>
+              <h3 className="text-lg font-black uppercase tracking-tight">{p.nombre}</h3>
+              <p className="mt-1 min-h-[2.75rem] text-sm leading-snug" style={{ color: NOCHE.textoTenue }}>
                 {p.unidades}
               </p>
 
-              {/* El «desde» va en su propia línea y no delante del número: en
-                  línea empujaba el «/ mes» al renglón siguiente y la tarjeta
-                  quedaba desalineada con las otras tres. Arriba, los cuatro
-                  números arrancan a la misma altura. */}
-              <p className="mt-5 h-4 text-sm" style={{ opacity: 0.6 }}>
-                {p.desde ? 'desde' : ''}
-              </p>
-              <p className="text-3xl font-semibold tabular-nums">
+              <p className="mt-3 text-3xl font-black tracking-tight tabular-nums">
+                {p.desde && <span className="text-lg font-bold">desde </span>}
                 {plata(p.mensual)}
-                <span className="text-base font-normal" style={{ opacity: 0.6 }}>
-                  {' '}
-                  / mes
-                </span>
               </p>
-              <p className="mt-1 text-sm" style={{ opacity: 0.7 }}>
-                + {plata(p.puestaAPunto)} de puesta a punto, por única vez
+              <p className="text-sm" style={{ color: NOCHE.textoTenue }}>
+                por mes
               </p>
 
-              <p className="mt-4 text-sm leading-relaxed" style={{ opacity: 0.7 }}>
+              <p className="mt-3 text-sm" style={{ color: NOCHE.textoSuave }}>
+                o {plata(p.porTemporada)} × {CUOTAS_DE_TEMPORADA} cuotas
+              </p>
+              <p className="mt-1 text-sm" style={{ color: NOCHE.textoTenue }}>
+                Puesta a punto: {plata(p.puestaAPunto)} (una vez)
+              </p>
+
+              <p className="mt-5 flex-1 text-sm leading-relaxed" style={{ color: NOCHE.textoSuave }}>
                 {p.paraQuien}
               </p>
-
-              <p
-                className="mt-4 border-t pt-3 text-xs leading-relaxed"
-                style={{ borderColor: p.destacado ? 'rgba(0,0,0,.1)' : 'rgba(255,255,255,.15)', opacity: 0.7 }}
-              >
-                {p.desde ? (
-                  <>El número final y la forma de pago salen de la primera charla.</>
-                ) : (
-                  <>
-                    O el año completo en {CUOTAS_DE_TEMPORADA} cuotas de temporada de{' '}
-                    <strong>{plata(p.porTemporada)}</strong>: pagás{' '}
-                    {MESES_QUE_SE_PAGAN_POR_ANIO} meses y usás 12.
-                  </>
-                )}
-              </p>
             </div>
-          ))}
-        </div>
-
-        {/* La comparación que el que compara en serio ya hizo. */}
-        <div className="mt-8 rounded-2xl p-5" style={{ background: 'rgba(255,255,255,.07)' }}>
-          <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,.8)' }}>
-            Los sistemas hoteleros que se venden en Argentina para esto arrancan
-            en <strong>{plata(PISO_DE_LOS_SISTEMAS_GRANDES)} por mes más IVA</strong>{' '}
-            sólo por la administración, y cobran el motor de reservas aparte.
-            Están bien y hacen más cosas que nosotros —facturan, se conectan con
-            los portales—. Si necesitás todo eso, son la opción correcta y te lo
-            vamos a decir en la primera charla.
-          </p>
-        </div>
-
-        <ul className="mt-8 grid gap-4 sm:grid-cols-3">
-          {[
-            { q: 'Cero comisión', a: 'Ni por reserva ni por huésped. Vendas mucho o poco, pagás lo mismo.' },
-            { q: 'Cero permanencia', a: 'Te vas cuando quieras, te llevás tus datos y te devolvemos lo que no usaste.' },
-            { q: 'La seña es tuya', a: 'Va directo a tu cuenta. No pasa por nosotros.' },
-          ].map((c) => (
-            <li key={c.q} className="rounded-2xl p-5" style={{ background: 'rgba(255,255,255,.07)' }}>
-              <p className="font-semibold">{c.q}</p>
-              <p className="mt-1 text-sm" style={{ color: 'rgba(255,255,255,.7)' }}>
-                {c.a}
-              </p>
-            </li>
-          ))}
-        </ul>
-
-        <p className="mt-6 text-sm" style={{ color: 'rgba(255,255,255,.55)' }}>
-          Precios en pesos, sin IVA. Se ajustan una vez al año, antes de la
-          temporada, y te lo avisamos antes de que pase.
-        </p>
-
-        <div className="mt-8">
-          <a
-            href={ENLACE_WHATSAPP}
-            target="_blank"
-            rel="noopener"
-            className="inline-block rounded-2xl px-6 py-3.5 font-semibold text-white"
-            style={{ background: MARCA.acento }}
-          >
-            Escribinos y lo vemos con tu complejo
-          </a>
-        </div>
+          </div>
+        ))}
       </div>
-    </section>
+
+      <div className="mt-8" data-revelar>
+        <Tarjeta>
+          <p className="text-sm leading-relaxed" style={{ color: NOCHE.textoSuave }}>
+            Para comparar: el piso de los sistemas grandes de hotelería arranca
+            en {plata(PISO_DE_LOS_SISTEMAS_GRANDES)} por mes más IVA, sólo la
+            parte de administración. Y los portales cobran entre 15 % y 18 % de
+            cada reserva.{' '}
+            <strong style={{ color: NOCHE.texto }}>Acá no hay comisión por reserva, vendas mucho o poco.</strong>{' '}
+            Sin permanencia: te vas cuando quieras y te llevás tus datos.
+          </p>
+        </Tarjeta>
+      </div>
+    </Seccion>
   );
 }
-
-const plata = (n: number) =>
-  new Intl.NumberFormat('es-AR', {
-    style: 'currency',
-    currency: 'ARS',
-    maximumFractionDigits: 0,
-  }).format(n);
 
 function Preguntas() {
   const preguntas = [
     {
       q: '¿Y si no me llevo bien con la computadora?',
-      a: 'Lo cargamos nosotros y el día a día es una sola pantalla: la lista de señas que esperan, con dos botones. Confirmar y rechazar. Cambiar un precio o cerrar una semana son dos pantallas más, y si preferís que lo hagamos nosotros, nos escribís.',
+      a: 'Lo cargamos nosotros y el día a día es una sola pantalla: la lista de señas que esperan, con dos botones. Cambiar un precio o cerrar una semana son dos pantallas más, y si preferís que lo hagamos nosotros, nos escribís.',
     },
-    // Estas dos estaban en una sección aparte de «qué todavía no hace». La
-    // sección se sacó, pero las dos preguntas las hace todo el mundo en la
-    // primera charla, y contestarlas acá es mejor que no contestarlas: el que
-    // necesita Booking se entera ahora y no después de una reunión.
+    {
+      q: '¿Qué pasa si alguien reserva y no transfiere?',
+      a: 'Le guardás la unidad las horas que vos decidas. Si el plazo pasa, las noches se liberan solas y vuelven a estar a la venta. No tenés que revisar nada.',
+    },
     {
       q: '¿Se conecta con Booking o con Airbnb?',
       a: 'Todavía no. Si vendés por esos canales, esas fechas las cerrás a mano en tu panel y nadie te las puede tomar por la página. Es lo primero que vamos a construir si varios lo piden.',
@@ -1018,82 +966,65 @@ function Preguntas() {
       a: 'Son tuyos y están aislados: ningún otro complejo los ve, y el visitante de tu página no ve quién ocupa una fecha, sólo que está ocupada. Si te vas, te los llevás.',
     },
     {
-      q: '¿Puedo bloquear fechas para mi familia?',
-      a: 'Sí, y el bloqueo lleva un motivo escrito para que en marzo sepas por qué esa semana estaba cerrada. Ocupa la noche igual que una reserva, así que nadie te la puede tomar.',
-    },
-    {
-      q: '¿Qué pasa si alguien reserva y no transfiere?',
-      a: 'Le guardás la unidad las horas que vos decidas. Si el plazo pasa, las noches se liberan solas y vuelven a estar a la venta. No tenés que revisar nada.',
-    },
-    {
-      q: '¿Sirve si tengo una sola cabaña? ¿Y si tengo veinte?',
-      a: 'Con una funciona, pero probablemente no te haga falta. Con más de quince empezás a necesitar cosas que todavía no tiene —limpieza, turnos, varios usuarios— y conviene que lo hablemos antes.',
-    },
-    {
-      q: '¿Qué pasa si dejo de pagar?',
-      a: 'Tu página deja de tomar reservas y tus datos quedan. Te los exportamos para que te los lleves. No se borra nada de un día para el otro.',
+      q: '¿Cómo sé que esto no se va a caer el fin de semana largo?',
+      a: 'Es la pregunta correcta. Cada cambio pasa por una batería de pruebas que incluye dos reservas simultáneas sobre la misma noche, y se corre contra la base de verdad. Y el panel te avisa si algo del sistema dejó de funcionar, en vez de esperar que lo notes.',
     },
     {
       q: '¿Puedo usar mi propio dominio?',
       a: 'Sí. Por defecto tu página vive en tucomplejo.alojaos.shop, y si tenés tu dominio lo apuntamos ahí.',
     },
-    {
-      q: '¿Cómo sé que esto no se va a caer el fin de semana largo?',
-      a: 'Es la pregunta correcta. Cada cambio que hacemos pasa por una batería de pruebas que incluye dos reservas simultáneas sobre la misma noche, y se corre contra la base de verdad, no contra una copia. Y el panel te dice si algo del sistema dejó de funcionar, en vez de esperar que lo notes.',
-    },
   ];
 
   return (
-    <section id="preguntas" className="px-5 py-16 sm:px-8 sm:py-20">
+    <Seccion id="preguntas" hondo>
       <div className="mx-auto max-w-3xl">
-        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Lo que nos preguntan</h2>
-        <dl className="mt-8 divide-y" style={{ borderColor: 'rgba(0,0,0,.08)' }}>
-          {preguntas.map((p) => (
-            <div key={p.q} className="py-5">
-              <dt className="font-semibold">{p.q}</dt>
-              <dd className="mt-1.5 text-sm leading-relaxed" style={{ color: MARCA.textoSuave }}>
-                {p.a}
-              </dd>
+        <div data-revelar>
+          <Rotulo centrado>Preguntas</Rotulo>
+          <div className="mt-4">
+            <Titulo centrado acento="preguntan">Lo que nos</Titulo>
+          </div>
+        </div>
+
+        <dl className="mt-12 space-y-3">
+          {preguntas.map((p, i) => (
+            <div key={p.q} data-revelar style={{ transitionDelay: `${Math.min(i, 4) * 50}ms` }}>
+              <Tarjeta>
+                <dt className="font-bold">{p.q}</dt>
+                <dd className="mt-2 text-sm leading-relaxed" style={{ color: NOCHE.textoSuave }}>
+                  {p.a}
+                </dd>
+              </Tarjeta>
             </div>
           ))}
         </dl>
       </div>
-    </section>
+    </Seccion>
   );
 }
 
 function CierreFinal() {
   return (
-    <section
-      className="border-y px-5 py-16 sm:px-8 sm:py-20"
-      style={{ borderColor: 'rgba(0,0,0,.07)', background: MARCA.cremaHonda }}
-    >
-      <div className="mx-auto max-w-2xl text-center">
-        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          Veámoslo con tu complejo adelante
-        </h2>
-        <p className="mt-4 leading-relaxed" style={{ color: MARCA.textoSuave }}>
-          Contanos cuántas unidades tenés y cómo cobrás. En la misma charla sale
-          el número y si esto te sirve.
-        </p>
-        <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <a
-            href={ENLACE_WHATSAPP}
-            target="_blank"
-            rel="noopener"
-            className="rounded-2xl px-6 py-3.5 font-semibold text-white shadow-sm"
-            style={{ background: MARCA.acento }}
-          >
-            Escribinos por WhatsApp
-          </a>
-          <a
-            href={`mailto:${MAIL_CONTACTO}`}
-            className="rounded-2xl border px-6 py-3.5 font-semibold"
-            style={{ borderColor: 'rgba(13,59,62,.2)', color: MARCA.tinta }}
-          >
-            {MAIL_CONTACTO}
-          </a>
+    <section className="relative overflow-hidden px-6 py-24 md:py-32" style={{ background: NOCHE.fondoHondo }}>
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background: `radial-gradient(44rem 24rem at 50% 0%, rgba(177,78,43,.16), transparent 65%)`,
+        }}
+      />
+      <div className="relative mx-auto max-w-3xl text-center" data-revelar>
+        <Titulo centrado acento="de nadie">Que la próxima noche no se trabe por una seña</Titulo>
+        <Bajada centrado className="mt-6 max-w-xl">
+          Escribinos y te armamos tu página con tus unidades y tus precios
+          cargados, para que la pruebes antes de que exista para nadie.
+        </Bajada>
+        <div className="mt-9 flex flex-wrap justify-center gap-3">
+          <BotonPrincipal href={ENLACE_WHATSAPP}>Hablemos por WhatsApp</BotonPrincipal>
+          <BotonSecundario href={`mailto:${MAIL_CONTACTO}`}>{MAIL_CONTACTO}</BotonSecundario>
         </div>
+        <p className="mt-6 text-sm" style={{ color: NOCHE.textoTenue }}>
+          Somos dos personas en Mar del Plata. Te contestamos nosotros, no un ticket.
+        </p>
       </div>
     </section>
   );
@@ -1101,17 +1032,23 @@ function CierreFinal() {
 
 function Pie() {
   return (
-    <footer className="px-5 py-10 text-sm sm:px-8" style={{ background: MARCA.tinta, color: 'rgba(255,255,255,.65)' }}>
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4">
-        <span>
-          <strong style={{ color: 'white' }}>AlojaOS</strong> · SOVARE studio · Mar del Plata
-        </span>
-        <div className="flex gap-5">
-          <a href="/login" className="hover:underline">
-            Entrar al panel
-          </a>
-          <a href={ENLACE_WHATSAPP} target="_blank" rel="noopener" className="hover:underline">
+    <footer className="px-6 py-12" style={{ background: NOCHE.fondo, borderTop: `1px solid ${NOCHE.borde}` }}>
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-5">
+        <div>
+          <p className="text-lg font-black italic tracking-tight">AlojaOS</p>
+          <p className="mt-1 text-sm" style={{ color: NOCHE.textoTenue }}>
+            Reservas para complejos chicos. Hecho en Mar del Plata.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-5 text-sm">
+          <a className="transition hover:text-white" style={{ color: NOCHE.textoSuave }} href={ENLACE_WHATSAPP} target="_blank" rel="noopener">
             WhatsApp
+          </a>
+          <a className="transition hover:text-white" style={{ color: NOCHE.textoSuave }} href={`mailto:${MAIL_CONTACTO}`}>
+            {MAIL_CONTACTO}
+          </a>
+          <a className="transition hover:text-white" style={{ color: NOCHE.textoSuave }} href="/login">
+            Entrar
           </a>
         </div>
       </div>

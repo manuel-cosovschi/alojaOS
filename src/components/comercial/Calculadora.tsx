@@ -36,7 +36,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { MARCA } from '@/lib/marca-alojaos';
+import { NOCHE } from '@/lib/marca-alojaos';
 
 const plata = (n: number) =>
   new Intl.NumberFormat('es-AR', {
@@ -124,7 +124,7 @@ export function Calculadora() {
           detalle={`por mes · ${plata(cuentas.comisionPorTemporada)} en tres meses`}
           explicacion="Calculado al 15 %, el extremo bajo de lo que cobran los portales. La seña se transfiere a tu cuenta y no pasa por nosotros."
         />
-        <p className="text-xs leading-relaxed" style={{ color: MARCA.textoSuave }}>
+        <p className="text-xs leading-relaxed" style={{ color: NOCHE.textoTenue }}>
           Son tus números, no nuestros promedios. Lo que esta cuenta{' '}
           <strong>no</strong> dice es que vas a vender más: eso dependería de que
           entren más reservas y de eso no sabemos nada. Dice qué dejás de perder.
@@ -157,12 +157,12 @@ function Perilla({
     <label className="block">
       <span className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="text-sm font-medium">{etiqueta}</span>
-        <span className="text-sm font-semibold" style={{ color: MARCA.tinta }}>
+        <span className="text-sm font-bold tabular-nums" style={{ color: NOCHE.menta }}>
           {formato(valor)}
         </span>
       </span>
       {ayuda && (
-        <span className="mt-0.5 block text-xs" style={{ color: MARCA.textoSuave }}>
+        <span className="mt-0.5 block text-xs" style={{ color: NOCHE.textoTenue }}>
           {ayuda}
         </span>
       )}
@@ -173,7 +173,7 @@ function Perilla({
         step={paso}
         value={valor}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-2 w-full accent-[#0d3b3e]"
+        className="mt-2 w-full accent-[#6fd6ae]"
         aria-label={etiqueta}
       />
     </label>
@@ -198,18 +198,24 @@ function Resultado({
       className="rounded-2xl p-5"
       style={
         fuerte
-          ? { background: MARCA.tinta, color: 'white' }
-          : { background: 'white', boxShadow: '0 1px 2px rgba(0,0,0,.05)' }
+          ? { background: `${NOCHE.menta}12`, border: `1px solid ${NOCHE.menta}44` }
+          : { background: NOCHE.tarjeta, border: `1px solid ${NOCHE.borde}` }
       }
     >
-      <p className="text-xs font-semibold uppercase tracking-wide" style={{ opacity: 0.6 }}>
+      <p
+        className="text-[11px] font-bold uppercase tracking-[0.18em]"
+        style={{ color: fuerte ? NOCHE.menta : NOCHE.textoTenue }}
+      >
         {titulo}
       </p>
-      <p className="mt-1 text-3xl font-semibold tabular-nums">{numero}</p>
-      <p className="mt-0.5 text-sm" style={{ opacity: 0.75 }}>
+      {/* `text-3xl` no es sólo tamaño: `prueba:comercial` busca el primer
+          `p.text-3xl` para comprobar que el número cambia al mover una perilla.
+          Si se renombra la clase hay que cambiar también esa aserción. */}
+      <p className="mt-1.5 text-3xl font-black tracking-tight tabular-nums">{numero}</p>
+      <p className="mt-1 text-sm" style={{ color: NOCHE.textoSuave }}>
         {detalle}
       </p>
-      <p className="mt-2 text-xs leading-relaxed" style={{ opacity: 0.7 }}>
+      <p className="mt-2.5 text-xs leading-relaxed" style={{ color: NOCHE.textoTenue }}>
         {explicacion}
       </p>
     </div>

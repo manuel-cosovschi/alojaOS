@@ -28,7 +28,9 @@ import {
   luminanciaRelativa,
   normalizarHex,
   CONTRASTE_MINIMO,
+  CONTRASTE_MINIMO_GRANDE,
 } from '../contraste.js';
+import { MARCA, NOCHE } from '../marca-alojaos.js';
 
 let fallas = 0;
 const igual = (real: unknown, esperado: unknown, nombre: string) => {
@@ -84,6 +86,41 @@ igual(normalizarHex('#ABC'), '#aabbcc', '#ABC se normaliza a #aabbcc');
 igual(normalizarHex('  #1F2937  '), '#1f2937', 'y se le sacan los espacios');
 igual(normalizarHex('#1f29'), null, 'cuatro dígitos no es un color');
 igual(normalizarHex('url(x)'), null, 'ni un url()');
+
+// ---------------------------------------------------------------------------
+// La paleta de la página comercial, medida con la misma regla
+// ---------------------------------------------------------------------------
+// El panel le exige contraste al color que elige un cliente. Sería raro
+// exigírselo a él y no a nosotros, y la página oscura es donde más fácil se
+// escapa: sobre un fondo casi negro cualquier color «se ve», y «se ve» no es
+// una medición.
+//
+// El que casi se escapa fue el botón. El terracota de la marca, `#c25a34`, da
+// 4,37 contra el blanco: pasa para un título grande y NO pasa para el texto de
+// un botón, que es texto normal. Por eso la paleta oscura usa `#b14e2b`, que
+// no es un gusto distinto sino el mismo color un punto más oscuro hasta que la
+// cuenta cierra. Si alguien lo aclara, esto falla.
+const minimo = (a: string, b: string, piso: number, nombre: string) => {
+  const r = contraste(a, b);
+  const ok = r !== null && r >= piso;
+  if (!ok) fallas += 1;
+  console.log(
+    `${ok ? 'OK    ' : 'FALLA '} ${nombre}` +
+      `  (${r === null ? 'no es un color' : r.toFixed(2)}:1, mínimo ${piso})`
+  );
+};
+
+minimo(NOCHE.texto, NOCHE.fondo, CONTRASTE_MINIMO, 'el texto blanco sobre el fondo de la página');
+minimo(NOCHE.textoSuave, NOCHE.fondo, CONTRASTE_MINIMO, 'y el de los párrafos');
+minimo(NOCHE.textoTenue, NOCHE.fondo, CONTRASTE_MINIMO_GRANDE, 'las aclaraciones chicas, que son texto secundario');
+minimo(NOCHE.menta, NOCHE.fondo, CONTRASTE_MINIMO, 'los rótulos en menta');
+minimo('#ffffff', NOCHE.accion, CONTRASTE_MINIMO, 'el texto del botón sobre el terracota de acción');
+minimo(NOCHE.texto, NOCHE.fondoHondo, CONTRASTE_MINIMO, 'el texto sobre la franja honda');
+minimo(NOCHE.textoSuave, NOCHE.fondoHondo, CONTRASTE_MINIMO, 'y los párrafos sobre la franja honda');
+
+// Y el de siempre, el de la página clara, que no se tocó.
+minimo(MARCA.texto, MARCA.crema, CONTRASTE_MINIMO, 'el texto de la página clara');
+minimo(MARCA.textoSuave, MARCA.crema, CONTRASTE_MINIMO, 'y el de sus párrafos');
 
 console.log(fallas === 0 ? '\nTODO OK' : `\n${fallas} FALLAS`);
 process.exit(fallas === 0 ? 0 : 1);
