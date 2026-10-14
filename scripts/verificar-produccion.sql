@@ -394,6 +394,19 @@ WITH esperado(orden, que, existe) AS (
          WHERE conrelid='public.unidades'::regclass AND contype='u'
            AND pg_get_constraintdef(oid) ILIKE '%complejo_id%codigo%')),
 
+  -- --- 019: el registro de migraciones ------------------------------------
+  -- Sin esto, `npm run db:migrate` vuelve a correr todas las migraciones desde
+  -- la 001 y muere en la 002 contra un proyecto que ya las tiene.
+  (120, 'el registro de migraciones existe',
+       (SELECT count(*) = 1 FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'sistema' AND c.relname = 'migraciones')),
+  -- Va en su propio esquema justamente para que la API no lo vea. Los permisos
+  -- no se dejan a que eso siga siendo cierto.
+  (121, 'y la API no lo puede ni mirar',
+       NOT has_schema_privilege('anon', 'sistema', 'USAGE')
+        AND NOT has_schema_privilege('authenticated', 'sistema', 'USAGE')),
+
   -- --- RLS en las tablas --------------------------------------------------
   (99, 'RLS prendido en todas las tablas de public',
        (SELECT count(*) = 0 FROM pg_class c
