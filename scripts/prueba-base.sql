@@ -713,20 +713,24 @@ BEGIN
     NOT has_function_privilege('authenticated', 'public.liberar_vencidas(uuid)', 'EXECUTE'));
 END $$;
 
--- La `reservas_pendientes` vieja: corrida a un costado y muerta para la API.
+-- La `reservas_pendientes` vieja: ya no está.
 --
 -- La 011 le agregó columnas de salida, y como Postgres no deja cambiarle el tipo
--- de retorno a una función existente, la vieja se renombró en vez de borrarse
--- (el conector con el que se aplica a producción no puede correr un `DROP`).
+-- de retorno a una función existente, la vieja se renombró a
+-- `reservas_pendientes_sin_comprobante` en vez de borrarse: el conector con el
+-- que se aplicaba a producción no podía correr un `DROP`.
 --
--- Acá se comprueba lo que esa maniobra tiene que dejar, y es importante que sea
--- en la base local: es la única corrida donde las migraciones se aplican de cero
--- y se puede ver que el renombre pasó de verdad, y no que la fila está en verde
--- porque la función no existe.
+-- La 022 la borra, porque ahora las migraciones se aplican por la Management
+-- API y el `DROP` entra. Así que esta prueba cambió de lo que afirmaba: antes
+-- que el renombre hubiera pasado, ahora que no quedó nada.
+--
+-- Importa que sea en la base local, que es la única corrida donde las
+-- migraciones se aplican de cero: acá se ve que la 011 renombró de verdad y que
+-- la 022 lo limpió, en ese orden, y no que la fila está en verde porque la
+-- función nunca existió.
 DO $$
 DECLARE
   v_existe BOOLEAN;
-  v_alcanzable BOOLEAN;
   v_nueva_ok BOOLEAN;
 BEGIN
   SELECT EXISTS (
@@ -734,18 +738,8 @@ BEGIN
      WHERE proname = 'reservas_pendientes_sin_comprobante'
        AND pronamespace = 'public'::regnamespace
   ) INTO v_existe;
-  PERFORM pg_temp.verificar('la reservas_pendientes vieja quedó corrida a un costado',
-    v_existe);
-
-  SELECT EXISTS (
-    SELECT 1 FROM pg_proc p
-     WHERE p.proname = 'reservas_pendientes_sin_comprobante'
-       AND p.pronamespace = 'public'::regnamespace
-       AND (has_function_privilege('anon', p.oid, 'EXECUTE')
-         OR has_function_privilege('authenticated', p.oid, 'EXECUTE'))
-  ) INTO v_alcanzable;
-  PERFORM pg_temp.verificar('y no la puede llamar nadie por la API',
-    NOT v_alcanzable);
+  PERFORM pg_temp.verificar('la reservas_pendientes vieja ya no está en la base',
+    NOT v_existe);
 
   -- Y que el renombre dejó el nombre bueno con la función buena: si el nombre
   -- quedó libre y la nueva no se creó, lo de arriba pasa igual y el panel se

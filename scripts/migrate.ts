@@ -131,14 +131,31 @@ async function run() {
     process.exit(1);
   }
 
-  await consultar(CREAR_REGISTRO);
+  // Con `--ver` no se crea el registro. La primera versión lo creaba siempre y
+  // después imprimía «no escribí nada», que es una mentira chica —el esquema y
+  // la tabla quedaban hechos— y una mentira chica en la herramienta que
+  // informa es la que enseña a no creerle.
+  if (!soloVer) await consultar(CREAR_REGISTRO);
 
   const aplicadas = new Map<string, { huella: string; adoptada: boolean }>();
-  for (const f of await consultar<{ archivo: string; huella: string; adoptada: boolean }>(
-    'SELECT archivo, huella, adoptada FROM sistema.migraciones'
-  )) {
-    aplicadas.set(f.archivo, { huella: f.huella, adoptada: f.adoptada });
+  let hayRegistro = true;
+  try {
+    for (const f of await consultar<{ archivo: string; huella: string; adoptada: boolean }>(
+      'SELECT archivo, huella, adoptada FROM sistema.migraciones'
+    )) {
+      aplicadas.set(f.archivo, { huella: f.huella, adoptada: f.adoptada });
+    }
+  } catch (e) {
+    // Con `--ver` sobre una base que todavía no tiene el registro, leerlo falla
+    // y eso no es un error: es la respuesta.
+    if (!soloVer) throw e;
+    hayRegistro = false;
+    console.log(
+      '\n  (el registro de migraciones todavía no existe en esta base;\n' +
+        '   lo crea la primera corrida sin --ver)'
+    );
   }
+  void hayRegistro;
 
   // ------------------------------------------------------------------
   // --adoptar: anotar sin correr

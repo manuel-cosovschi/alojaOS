@@ -11,8 +11,9 @@
 --
 -- Por qué va aparte de `ejemplo.sql`: el de al lado es el complejo que se usa
 -- para tocar la página y ver los casos de precio y calendario. Este no tiene
--- nada de eso a propósito —una unidad, un precio, una reserva con datos de una
--- persona— porque lo único que se le pregunta es si se filtra.
+-- nada de eso a propósito —una unidad, un precio parejo todo el año, y una
+-- reserva con datos de una persona— porque lo único que se le pregunta es si se
+-- filtra.
 --
 --   SET alojaos.vecino = '<uuid del segundo dueño>';
 --   \i scripts/ejemplo-vecino.sql
@@ -37,6 +38,31 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO config_calendario (complejo_id, primera_fecha, ultima_fecha, minimo_noches)
 VALUES ('0c0c0c0c-0000-0000-0000-00000000000c', NULL, '2027-04-30', 2)
 ON CONFLICT (complejo_id) DO NOTHING;
+
+-- ============================================
+-- El precio, que faltaba
+-- ============================================
+-- El comentario de arriba decía «una unidad, un precio, una reserva» y el
+-- precio no estaba. O sea que este complejo no podía cotizar nada, y por lo
+-- tanto `crear_reserva()` no podía crearle una reserva: la única que tenía era
+-- la sembrada ahí abajo, puesta con un INSERT.
+--
+-- Eso hacía que `prueba-dos-duenos.mts` dependiera de una fila que el sistema
+-- está diseñado para consumir —el reloj de vencimientos la vence a las 20
+-- horas— y la batería del aislamiento, que es la que no puede fallar, sólo
+-- servía el día de la siembra.
+--
+-- El tramo va ancho a propósito: esta posada no existe para probar precios, así
+-- que cualquier fecha de la ventana tiene que poder cotizarse.
+INSERT INTO periodos_precio (id, complejo_id, desde, hasta, etiqueta)
+VALUES ('0e0e0e0e-0000-0000-0000-00000000000e', '0c0c0c0c-0000-0000-0000-00000000000c',
+        '2026-01-01', '2027-12-31', 'todo el año')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO precios_unidad (periodo_id, unidad_id, precio)
+VALUES ('0e0e0e0e-0000-0000-0000-00000000000e', '0d0d0d0d-0000-0000-0000-00000000000d',
+        120000)
+ON CONFLICT (periodo_id, unidad_id) DO NOTHING;
 
 -- Una reserva con datos de una persona. Es el dato que la prueba va a buscar
 -- desde la sesión del otro dueño: si aparece, el producto no se puede vender.

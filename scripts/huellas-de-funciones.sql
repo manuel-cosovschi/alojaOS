@@ -29,8 +29,28 @@
 -- y contesta ok/FALTA por sí mismo. Esto necesita las dos bases para decir
 -- algo, y una huella sola no significa nada.
 
+-- Dos huellas, y la que importa es la segunda.
+--
+-- `huella` es `md5(prosrc)`: el cuerpo exacto, comentarios incluidos. Dos
+-- iguales son dos funciones idénticas, sin lugar a dudas.
+--
+-- `codigo` es la misma cuenta después de sacar los comentarios de línea y
+-- aplastar los espacios. Esa es la que contesta la pregunta que importa: ¿la
+-- base corre la lógica del repo? Porque pasó esto: doce funciones de las
+-- migraciones viejas tenían `huella` distinta y `codigo` igual —producción
+-- tenía una redacción anterior de un comentario, aplicada antes de que el
+-- archivo se editara—. Una herramienta que grita por eso es una que ensaña a
+-- ignorarla.
+--
+-- El `regexp_replace` es una aproximación: sacaría también un `--` que
+-- estuviera adentro de una cadena. Ninguna función de este esquema tiene uno, y
+-- por eso las dos columnas van juntas: si alguna vez la aproximación engañara,
+-- `huella` sigue estando al lado.
 SELECT p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS funcion,
        md5(p.prosrc) AS huella,
+       md5(regexp_replace(
+             regexp_replace(p.prosrc, '--[^\n]*', '', 'g'),
+             '\s+', ' ', 'g')) AS codigo,
        CASE WHEN p.prosecdef THEN 'definer' ELSE 'invoker' END AS seguridad,
        coalesce(array_to_string(p.proconfig, ','), '-') AS config
   FROM pg_proc p

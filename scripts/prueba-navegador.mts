@@ -347,9 +347,21 @@ async function main() {
     // la subida rota a propósito —sin clave de servicio— y lo que tiene que
     // pasar es que la pantalla lo diga, no que felicite a nadie.
     //
-    // Con la clave cargada este tramo se saltea: ahí la subida funciona y lo
-    // que hay que comprobar es lo contrario (ALOJAOS_SUBIDA_ANDA=1).
-    const subidaAnda = process.env.ALOJAOS_SUBIDA_ANDA === '1';
+    // Qué se comprueba depende de si el servidor tiene clave de servicio, y eso
+    // se MIRA en vez de pedirlo por una bandera.
+    //
+    // Antes era `ALOJAOS_SUBIDA_ANDA=1` y por omisión asumía la subida rota.
+    // O sea que la invocación normal —`npm run prueba:navegador` contra un
+    // entorno bien configurado— daba tres FALLA por una razón que no era un
+    // problema. Un arnés cuyo caso por omisión es el roto enseña a leer sus
+    // fallas como ruido, y después la que importa pasa de largo.
+    //
+    // La bandera sigue sirviendo para forzar el caso a mano, sobre todo cuando
+    // ALOJAOS_BASE apunta a un servidor que no es el de este .env.local.
+    const subidaAnda =
+      process.env.ALOJAOS_SUBIDA_ANDA === '1' ||
+      (process.env.ALOJAOS_SUBIDA_ANDA !== '0' &&
+        !!(process.env.SUPABASE_SERVICE_ROLE_KEY ?? delEnv('SUPABASE_SERVICE_ROLE_KEY')));
 
     await page.getByLabel('Elegir el comprobante').setInputFiles({
       name: 'transferencia.png',
