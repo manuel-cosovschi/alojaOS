@@ -90,8 +90,8 @@ export function Comercial() {
         {
           background: NOCHE.fondo,
           color: NOCHE.texto,
-          '--fuente-titulo': 'var(--font-geist-sans)',
-          '--fuente-cuerpo': 'var(--font-geist-sans)',
+          '--fuente-titulo': 'var(--font-aloja)',
+          '--fuente-cuerpo': 'var(--font-aloja)',
         } as React.CSSProperties
       }
     >
