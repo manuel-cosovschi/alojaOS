@@ -1,7 +1,7 @@
 {
-  "sacadas_el": "2026-10-14T23:30:02.950Z",
-  "commit": "e395e5b25b9b51542e44dbd10927a9342372d1aa",
-  "huella_interfaz": "7d1c7b24cf3f725611a1a4e5da0cfd2e",
+  "sacadas_el": "2026-10-14T23:51:32.487Z",
+  "commit": "a3706d679f20d0140d02ab2d206bda085036b35b",
+  "huella_interfaz": "ed1f48c58452e8879c479d6978ae68c8",
   "base": "http://alojaos.test:3000",
   "capturas": [
     {

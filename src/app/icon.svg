@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!--
+    El ícono de la pestaña. Antes no había ninguno y /favicon.ico daba 404, así
+    que el navegador mostraba el papel en blanco: en una barra con quince
+    pestañas, la nuestra era la que no se reconocía.
+
+    Es el techo de una cabaña sobre el verde de la marca. Dibujado y no una
+    imagen porque un SVG se ve nítido en cualquier densidad de pantalla y pesa
+    menos que el pedido que lo trae.
+  -->
+  <rect width="64" height="64" rx="14" fill="#06191b"/>
+  <path d="M12 34 32 16l20 18" fill="none" stroke="#6fd6ae" stroke-width="5.5"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M18 33v15h28V33" fill="none" stroke="#ffffff" stroke-width="5"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="28" y="38" width="8" height="10" rx="1.5" fill="#b14e2b"/>
+</svg>

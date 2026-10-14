@@ -54,6 +54,7 @@
 import { ENLACE_WHATSAPP, MAIL_CONTACTO } from '@/lib/constants';
 import { MARCA, NOCHE } from '@/lib/marca-alojaos';
 import { CASO, HALLAZGOS } from '@/lib/caso';
+import { direccionDelComplejo } from '@/lib/tenant';
 import {
   PLANES,
   MESES_QUE_SE_PAGAN_POR_ANIO,
@@ -64,6 +65,8 @@ import { Calculadora } from './Calculadora';
 import { Captura, Marco, Telefono } from './Pantallas';
 import { CAPTURAS, CAPTURAS_SACADAS_EL } from './capturas.generado';
 import { Revelar } from './Revelar';
+import { Video, DemoEmbebido } from './Video';
+import { VIDEOS_GRABADOS_EL } from './videos.generado';
 import { Check, Cruz, Flecha, Punto } from './Iconos';
 
 const SECCIONES = [
@@ -74,11 +77,31 @@ const SECCIONES = [
   { id: 'precio', texto: 'Precio' },
 ];
 
-/** La dirección del demo, que es lo único de esta página que no se puede falsear. */
-const DEMO = CAPTURAS['huesped-eligiendo'].de;
+/**
+ * La dirección del demo, que es lo único de esta página que no se puede falsear.
+ *
+ * ------------------------------------------------------------------
+ * Por qué NO sale de `CAPTURAS[...].de`
+ * ------------------------------------------------------------------
+ * Porque ahí estaba, y salió a producción apuntando a
+ * `http://cabanias-del-sol.alojaos.test:3000` — mi máquina. El enlace existía,
+ * el botón andaba, y el que lo tocaba no llegaba a ninguna parte. Es
+ * exactamente el error que esta página ya tuvo una vez con el WhatsApp de
+ * contacto, y volvió por otra puerta.
+ *
+ * La causa es confundir dos cosas que parecían una: `de` dice **de dónde salió
+ * esa imagen** —y esa corrida fue local, porque las pantallas del panel
+ * todavía no estaban en producción— y eso es documentación, no un enlace para
+ * un visitante. La dirección del demo se arma como se arma la de cualquier
+ * complejo, desde el dominio del sitio.
+ */
+const DEMO = direccionDelComplejo('cabanias-del-sol');
 
 /** La fecha de las capturas, escrita como la lee alguien de acá. */
 const DIA_DE_LAS_CAPTURAS = CAPTURAS_SACADAS_EL.split('-').reverse().join('/');
+
+/** Y la de los videos, que se graban aparte. */
+const DIA_DE_LOS_VIDEOS = VIDEOS_GRABADOS_EL.split('-').reverse().join('/');
 
 export function Comercial() {
   return (
@@ -95,6 +118,22 @@ export function Comercial() {
         } as React.CSSProperties
       }
     >
+      {/*
+        El fondo oscuro tiene que llegar más allá de esta página.
+
+        Sin esto, `body` se queda con el crema que fija `globals.css` para la
+        página de un complejo, y eso se ve en dos lados: cuando en un teléfono
+        estirás el scroll más allá del final —aparece una franja crema abajo de
+        una página negra— y en la barra del navegador, que se pinta del color
+        del documento.
+
+        `color-scheme: dark` es la otra mitad y se nota en la calculadora: las
+        perillas son controles del sistema operativo, y sin esto el navegador
+        las dibuja en su versión clara, con la barra gris sobre el fondo
+        oscuro. Decirle que el documento es oscuro las dibuja como corresponde.
+      */}
+      <style>{`html{color-scheme:dark}body{background:${NOCHE.fondo}}`}</style>
+
       {/* Esta línea tiene que correr ANTES de pintar: es la que habilita el
           estado escondido de las animaciones. Si no corriera —JavaScript
           apagado, un error de red— nada se esconde y la página se ve entera,
@@ -110,6 +149,7 @@ export function Comercial() {
       <ComoEmpezas />
       <ElPanel />
       <LaPaginaDelHuesped />
+      <ElDemo />
       <LaRegla />
       <ElCaso />
       <LaCuenta />
@@ -435,10 +475,16 @@ function Cinta() {
       style={{ background: NOCHE.fondoHondo, borderTop: `1px solid ${NOCHE.borde}`, borderBottom: `1px solid ${NOCHE.borde}` }}
     >
       {/* El contenido va dos veces: cuando el desplazamiento llega al 50 %, el
-          segundo juego está donde arrancó el primero y el ciclo no se nota. */}
-      <div className="cinta flex w-max gap-10 whitespace-nowrap">
+          segundo juego está donde arrancó el primero y el ciclo no se nota.
+
+          Y las ocho copias están `aria-hidden`: para quien usa un lector de
+          pantalla, una cinta que repite la misma frase ocho veces es ocho veces
+          la misma frase. La frase se dice una sola vez, abajo, donde ninguna
+          pantalla la muestra pero todo lector la lee. */}
+      <p className="sr-only">{frase}</p>
+      <div className="cinta flex w-max gap-10 whitespace-nowrap" aria-hidden>
         {[0, 1].map((juego) => (
-          <div key={juego} className="flex gap-10" aria-hidden={juego === 1}>
+          <div key={juego} className="flex gap-10">
             {[0, 1, 2, 3].map((i) => (
               <span
                 key={i}
@@ -685,9 +731,16 @@ function LaPaginaDelHuesped() {
     <Seccion hondo>
       <div className="grid items-center gap-12 lg:grid-cols-[1fr_1fr]">
         <div className="order-2 lg:order-1" data-revelar>
+          {/* Acá iba una captura de la pantalla de transferir. Un video del
+              recorrido entero —elegir, ver el precio, dejar los datos,
+              reservar— dice en ocho segundos lo que la captura decía de una
+              sola pantalla. */}
           <Telefono>
-            <Captura cual="huesped-transferir" sizes="(max-width: 1024px) 80vw, 300px" />
+            <Video cual="reservar" />
           </Telefono>
+          <p className="mt-4 text-center text-xs" style={{ color: NOCHE.textoTenue }}>
+            Grabado el {DIA_DE_LOS_VIDEOS} contra el sistema andando, sin cortes.
+          </p>
         </div>
 
         <div className="order-1 lg:order-2" data-revelar style={{ transitionDelay: '100ms' }}>
@@ -718,6 +771,58 @@ function LaPaginaDelHuesped() {
               El demo está abierto
             </a>
             : reservá vos mismo.
+          </p>
+        </div>
+      </div>
+    </Seccion>
+  );
+}
+
+/**
+ * El demo, adentro de la página.
+ *
+ * Es lo único de toda la página que no hay que creer: no es una captura, ni un
+ * video, ni una promesa. Es el sistema, con su base del otro lado, corriendo
+ * adentro de un marco. Se puede elegir fechas y reservar desde acá.
+ *
+ * Por eso va después de las dos secciones de producto y antes de la regla: el
+ * que llegó hasta acá ya vio qué hace y ahora puede comprobarlo, que es
+ * exactamente el momento en que una página de venta deja de tener que
+ * convencer.
+ */
+function ElDemo() {
+  return (
+    <Seccion>
+      <div className="mx-auto max-w-4xl">
+        <div data-revelar>
+          <Rotulo centrado>Sin registrarte ni dejar un mail</Rotulo>
+          <div className="mt-4">
+            <Titulo centrado acento="probalo acá mismo">
+              No hace falta que nos creas:
+            </Titulo>
+          </div>
+          <Bajada centrado className="mt-5 max-w-2xl">
+            Es un complejo de ejemplo con sus cuatro cabañas y sus precios
+            cargados. Lo que ves es el sistema, no una maqueta: elegí unas
+            noches y reservá.
+          </Bajada>
+        </div>
+
+        <div className="mt-10" data-revelar>
+          <div
+            className="mx-auto w-full max-w-[380px] overflow-hidden rounded-[2rem] p-2.5"
+            style={{ background: '#0b2a2c', border: `1px solid ${NOCHE.borde}`, boxShadow: '0 26px 60px rgba(0,0,0,.45)' }}
+          >
+            <div className="overflow-hidden rounded-[1.5rem] bg-white">
+              <DemoEmbebido direccion={DEMO} />
+            </div>
+          </div>
+          <p className="mt-5 text-center text-sm" style={{ color: NOCHE.textoTenue }}>
+            ¿Preferís verlo en grande?{' '}
+            <a className="underline transition hover:text-white" href={DEMO} target="_blank" rel="noopener">
+              Abrilo en otra pestaña
+            </a>
+            .
           </p>
         </div>
       </div>

@@ -2,9 +2,21 @@ import type { Metadata } from 'next';
 import { Archivo } from 'next/font/google';
 import './globals.css';
 
+/**
+ * Lo que vale para todas las páginas.
+ *
+ * El título y la descripción de verdad los pone cada página con
+ * `generateMetadata()`: la de un complejo lleva su nombre, y la comercial la
+ * suya. Esto es el piso por si alguna no lo hiciera.
+ *
+ * `metadataBase` existe para que `/og.png` se convierta en una dirección
+ * absoluta: WhatsApp y los demás no siguen rutas relativas, así que sin esto la
+ * vista previa sale sin imagen y nada falla.
+ */
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://alojaos.shop'),
   title: 'AlojaOS',
-  description: 'El sistema de reservas de tu complejo.',
+  description: 'Reservas para complejos de 3 a 15 unidades.',
 };
 
 /**

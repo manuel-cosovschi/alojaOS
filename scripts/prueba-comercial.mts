@@ -164,6 +164,76 @@ async function main() {
       verificar(inicial !== despues, 'y el número cambia al mover una perilla', `${inicial} → ${despues}`);
     }
 
+    // --- Los enlaces absolutos llevan a algún lado -------------------------
+    // Acá se escapó uno de los grandes: el «abrí el demo» del hero salió a
+    // producción apuntando a `http://cabanias-del-sol.alojaos.test:3000`, que
+    // es mi máquina. El enlace existía, se podía tocar, y no llevaba a ninguna
+    // parte. Esta batería miraba los anclajes (`#`) y los internos (`/`), y los
+    // absolutos —que son justo los que pueden apuntar a otro lado— no.
+    //
+    // La regla no es «que no diga .test»: contra el servidor local, decir
+    // `.test` es lo CORRECTO. La regla es que un enlace absoluto de esta página
+    // tiene que quedar en el mismo dominio desde el que se está sirviendo. Así
+    // la prueba vale igual local y en producción, y la que falla es la mezcla,
+    // que es exactamente lo que pasó.
+    {
+      const miDominio = new URL(BASE).hostname;
+      const absolutos = [...new Set(enlaces.filter((h) => /^https?:\/\//.test(h)))];
+      const afuera = absolutos.filter((h) => {
+        const host = new URL(h).hostname;
+        return host !== miDominio && !host.endsWith(`.${miDominio}`) && host !== 'wa.me';
+      });
+      verificar(
+        afuera.length === 0,
+        `los ${absolutos.length} enlaces absolutos se quedan en ${miDominio}`,
+        `se van a otro lado: ${afuera.join(', ')}`
+      );
+
+      // Y que contesten. wa.me queda afuera: le responde distinto a un robot.
+      for (const url of absolutos.filter((h) => new URL(h).hostname !== 'wa.me')) {
+        const r = await page.request.get(url, { failOnStatusCode: false, timeout: 15_000 }).catch(() => null);
+        verificar((r?.status() ?? 0) < 400, `el enlace a ${url} contesta`, `HTTP ${r?.status() ?? 'sin respuesta'}`);
+      }
+    }
+
+    // --- El video y el demo embebido ---------------------------------------
+    // Un `<video>` con una fuente rota no tira ningún error: muestra el póster
+    // y se queda quieto para siempre. Es la misma falla de siempre con otra
+    // cara, así que se piden los archivos y se mira que contesten.
+    {
+      const fuentes = await page.evaluate(
+        `JSON.stringify(Array.from(document.querySelectorAll('video source')).map(function(s){ return s.src; })
+           .concat(Array.from(document.querySelectorAll('video')).map(function(v){ return v.poster; }).filter(Boolean)))`
+      );
+      const urls = JSON.parse(fuentes as string) as string[];
+      verificar(urls.length >= 2, 'el video tiene sus fuentes y su póster', `encontré ${urls.length}`);
+      for (const u of urls) {
+        const r = await page.request.get(u, { failOnStatusCode: false }).catch(() => null);
+        verificar((r?.status() ?? 0) < 400, `el archivo ${u.split('/').pop()} contesta`, `HTTP ${r?.status()}`);
+      }
+
+      // El demo embebido no puede cargar solo: sería traer un sitio entero
+      // —con su base del otro lado— para alguien que quizás nunca scrollea
+      // hasta ahí.
+      verificar(
+        (await page.locator('iframe').count()) === 0,
+        'el demo embebido no carga hasta que lo tocan',
+        'hay un iframe antes de que nadie apriete nada'
+      );
+
+      const boton = page.getByRole('button', { name: /Probar el demo/ });
+      if ((await boton.count()) > 0) {
+        await boton.click();
+        await page.waitForTimeout(3500);
+        const adentro = await page.frameLocator('iframe').locator('h1').first().innerText().catch(() => '');
+        verificar(
+          adentro.trim().length > 0,
+          'y al tocarlo carga el sistema de verdad adentro de la página',
+          'el iframe quedó vacío: casi siempre es `frame-ancestors` bloqueando el dominio desde el que se sirve'
+        );
+      }
+    }
+
     // --- Sin JavaScript, la página se ve entera ----------------------------
     // Las secciones aparecen al scrollear, y una animación de aparición
     // esconde el contenido y confía en que algo lo vuelva a mostrar. Si ese
