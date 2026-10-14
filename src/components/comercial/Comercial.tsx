@@ -65,6 +65,8 @@ import { Calculadora } from './Calculadora';
 import { Captura, Marco, Telefono } from './Pantallas';
 import { CAPTURAS, CAPTURAS_SACADAS_EL } from './capturas.generado';
 import { Revelar } from './Revelar';
+import { Video, DemoEmbebido } from './Video';
+import { VIDEOS_GRABADOS_EL } from './videos.generado';
 import { Check, Cruz, Flecha, Punto } from './Iconos';
 
 const SECCIONES = [
@@ -97,6 +99,9 @@ const DEMO = direccionDelComplejo('cabanias-del-sol');
 
 /** La fecha de las capturas, escrita como la lee alguien de acá. */
 const DIA_DE_LAS_CAPTURAS = CAPTURAS_SACADAS_EL.split('-').reverse().join('/');
+
+/** Y la de los videos, que se graban aparte. */
+const DIA_DE_LOS_VIDEOS = VIDEOS_GRABADOS_EL.split('-').reverse().join('/');
 
 export function Comercial() {
   return (
@@ -144,6 +149,7 @@ export function Comercial() {
       <ComoEmpezas />
       <ElPanel />
       <LaPaginaDelHuesped />
+      <ElDemo />
       <LaRegla />
       <ElCaso />
       <LaCuenta />
@@ -725,9 +731,16 @@ function LaPaginaDelHuesped() {
     <Seccion hondo>
       <div className="grid items-center gap-12 lg:grid-cols-[1fr_1fr]">
         <div className="order-2 lg:order-1" data-revelar>
+          {/* Acá iba una captura de la pantalla de transferir. Un video del
+              recorrido entero —elegir, ver el precio, dejar los datos,
+              reservar— dice en ocho segundos lo que la captura decía de una
+              sola pantalla. */}
           <Telefono>
-            <Captura cual="huesped-transferir" sizes="(max-width: 1024px) 80vw, 300px" />
+            <Video cual="reservar" />
           </Telefono>
+          <p className="mt-4 text-center text-xs" style={{ color: NOCHE.textoTenue }}>
+            Grabado el {DIA_DE_LOS_VIDEOS} contra el sistema andando, sin cortes.
+          </p>
         </div>
 
         <div className="order-1 lg:order-2" data-revelar style={{ transitionDelay: '100ms' }}>
@@ -758,6 +771,58 @@ function LaPaginaDelHuesped() {
               El demo está abierto
             </a>
             : reservá vos mismo.
+          </p>
+        </div>
+      </div>
+    </Seccion>
+  );
+}
+
+/**
+ * El demo, adentro de la página.
+ *
+ * Es lo único de toda la página que no hay que creer: no es una captura, ni un
+ * video, ni una promesa. Es el sistema, con su base del otro lado, corriendo
+ * adentro de un marco. Se puede elegir fechas y reservar desde acá.
+ *
+ * Por eso va después de las dos secciones de producto y antes de la regla: el
+ * que llegó hasta acá ya vio qué hace y ahora puede comprobarlo, que es
+ * exactamente el momento en que una página de venta deja de tener que
+ * convencer.
+ */
+function ElDemo() {
+  return (
+    <Seccion>
+      <div className="mx-auto max-w-4xl">
+        <div data-revelar>
+          <Rotulo centrado>Sin registrarte ni dejar un mail</Rotulo>
+          <div className="mt-4">
+            <Titulo centrado acento="probalo acá mismo">
+              No hace falta que nos creas:
+            </Titulo>
+          </div>
+          <Bajada centrado className="mt-5 max-w-2xl">
+            Es un complejo de ejemplo con sus cuatro cabañas y sus precios
+            cargados. Lo que ves es el sistema, no una maqueta: elegí unas
+            noches y reservá.
+          </Bajada>
+        </div>
+
+        <div className="mt-10" data-revelar>
+          <div
+            className="mx-auto w-full max-w-[380px] overflow-hidden rounded-[2rem] p-2.5"
+            style={{ background: '#0b2a2c', border: `1px solid ${NOCHE.borde}`, boxShadow: '0 26px 60px rgba(0,0,0,.45)' }}
+          >
+            <div className="overflow-hidden rounded-[1.5rem] bg-white">
+              <DemoEmbebido direccion={DEMO} />
+            </div>
+          </div>
+          <p className="mt-5 text-center text-sm" style={{ color: NOCHE.textoTenue }}>
+            ¿Preferís verlo en grande?{' '}
+            <a className="underline transition hover:text-white" href={DEMO} target="_blank" rel="noopener">
+              Abrilo en otra pestaña
+            </a>
+            .
           </p>
         </div>
       </div>

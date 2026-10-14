@@ -26,7 +26,8 @@
     "verificar": "tsx scripts/verificar-produccion.mts",
     "huellas": "tsx scripts/huellas.mts",
     "capturas": "tsx scripts/capturas.mts",
-    "og": "tsx scripts/og.mts"
+    "og": "tsx scripts/og.mts",
+    "videos": "tsx scripts/videos.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
