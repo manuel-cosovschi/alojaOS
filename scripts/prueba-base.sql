@@ -16,11 +16,40 @@
 \set ON_ERROR_STOP on
 BEGIN;
 
-CREATE TEMP TABLE resultado (n SERIAL, nombre TEXT, paso BOOLEAN, detalle TEXT);
+-- ============================================
+-- El registro de resultados
+-- ============================================
+-- `paso` es NOT NULL, y eso no es decoración: es el arreglo de un agujero que
+-- tenía este arnés y que es exactamente la falla que el proyecto persigue.
+--
+-- Antes la columna admitía NULL, y una aserción cuya expresión daba NULL —cosa
+-- facilísima en SQL: cualquier comparación contra una columna nula da NULL— se
+-- guardaba como NULL. Entonces:
+--
+--   · la línea se imprimía como FALLA, porque NULL no es true;
+--   · el resumen no la contaba como pasada, porque NULL no es true;
+--   · y el chequeo final, `count(*) ... WHERE NOT paso`, TAMPOCO la contaba,
+--     porque `NOT NULL` es NULL y no true.
+--
+-- O sea: la prueba imprimía FALLA, el resumen decía «318 de 319», y el script
+-- salía con código 0 y un «✓ todo bien». Una prueba que no pasa ni falla no
+-- rompía nada. Me pasó escribiendo el bloque 20 y por eso está arreglado.
+--
+-- Una aserción indeterminada es PEOR que una que falla: significa que no se
+-- evaluó, así que no se sabe nada de lo que pretendía comprobar. Por eso se
+-- cuenta como falla y además se marca aparte, con otra palabra.
+CREATE TEMP TABLE resultado (
+  n SERIAL,
+  nombre TEXT,
+  paso BOOLEAN NOT NULL,
+  indeterminada BOOLEAN NOT NULL DEFAULT false,
+  detalle TEXT
+);
 
 CREATE OR REPLACE FUNCTION pg_temp.verificar(p_nombre TEXT, p_paso BOOLEAN, p_detalle TEXT DEFAULT '')
 RETURNS VOID LANGUAGE sql AS $$
-  INSERT INTO resultado (nombre, paso, detalle) VALUES (p_nombre, p_paso, p_detalle);
+  INSERT INTO resultado (nombre, paso, indeterminada, detalle)
+  VALUES (p_nombre, coalesce(p_paso, false), p_paso IS NULL, p_detalle);
 $$;
 
 -- ============================================
@@ -684,20 +713,24 @@ BEGIN
     NOT has_function_privilege('authenticated', 'public.liberar_vencidas(uuid)', 'EXECUTE'));
 END $$;
 
--- La `reservas_pendientes` vieja: corrida a un costado y muerta para la API.
+-- La `reservas_pendientes` vieja: ya no está.
 --
 -- La 011 le agregó columnas de salida, y como Postgres no deja cambiarle el tipo
--- de retorno a una función existente, la vieja se renombró en vez de borrarse
--- (el conector con el que se aplica a producción no puede correr un `DROP`).
+-- de retorno a una función existente, la vieja se renombró a
+-- `reservas_pendientes_sin_comprobante` en vez de borrarse: el conector con el
+-- que se aplicaba a producción no podía correr un `DROP`.
 --
--- Acá se comprueba lo que esa maniobra tiene que dejar, y es importante que sea
--- en la base local: es la única corrida donde las migraciones se aplican de cero
--- y se puede ver que el renombre pasó de verdad, y no que la fila está en verde
--- porque la función no existe.
+-- La 022 la borra, porque ahora las migraciones se aplican por la Management
+-- API y el `DROP` entra. Así que esta prueba cambió de lo que afirmaba: antes
+-- que el renombre hubiera pasado, ahora que no quedó nada.
+--
+-- Importa que sea en la base local, que es la única corrida donde las
+-- migraciones se aplican de cero: acá se ve que la 011 renombró de verdad y que
+-- la 022 lo limpió, en ese orden, y no que la fila está en verde porque la
+-- función nunca existió.
 DO $$
 DECLARE
   v_existe BOOLEAN;
-  v_alcanzable BOOLEAN;
   v_nueva_ok BOOLEAN;
 BEGIN
   SELECT EXISTS (
@@ -705,18 +738,8 @@ BEGIN
      WHERE proname = 'reservas_pendientes_sin_comprobante'
        AND pronamespace = 'public'::regnamespace
   ) INTO v_existe;
-  PERFORM pg_temp.verificar('la reservas_pendientes vieja quedó corrida a un costado',
-    v_existe);
-
-  SELECT EXISTS (
-    SELECT 1 FROM pg_proc p
-     WHERE p.proname = 'reservas_pendientes_sin_comprobante'
-       AND p.pronamespace = 'public'::regnamespace
-       AND (has_function_privilege('anon', p.oid, 'EXECUTE')
-         OR has_function_privilege('authenticated', p.oid, 'EXECUTE'))
-  ) INTO v_alcanzable;
-  PERFORM pg_temp.verificar('y no la puede llamar nadie por la API',
-    NOT v_alcanzable);
+  PERFORM pg_temp.verificar('la reservas_pendientes vieja ya no está en la base',
+    NOT v_existe);
 
   -- Y que el renombre dejó el nombre bueno con la función buena: si el nombre
   -- quedó libre y la nueva no se creó, lo de arriba pasa igual y el panel se
@@ -1049,23 +1072,1523 @@ BEGIN
 END $$;
 
 -- ============================================
+-- 15. Cerrar y reabrir fechas
+-- ============================================
+-- `desbloquear()` existía desde la 009 y `bloquear()` no: el dueño podía
+-- deshacer algo que no podía hacer. Lo que se comprueba acá es el par entero,
+-- y sobre todo las dos cosas que lo hacen distinto de «escribir una fila»:
+-- que no se pueda cerrar lo que ya está vendido, y que reabrir diga cuántas
+-- reabrió en vez de contestar «listo».
+DO $$
+DECLARE
+  v JSONB;
+  v_complejo UUID := 'aaaaaaaa-0000-0000-0000-000000000001';
+  v_unidad   UUID := 'bbbbbbbb-0000-0000-0000-000000000001';
+  v_vecina   UUID := 'bbbbbbbb-0000-0000-0000-000000000009';
+  v_bloqueo  UUID;
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+
+  -- Cerrar unas noches libres.
+  v := public.bloquear(v_complejo, v_unidad, '2027-06-10', '2027-06-14', 'La pintamos');
+  PERFORM pg_temp.verificar('el dueño puede cerrar fechas libres',
+    (v->>'ok')::boolean, v::text);
+  v_bloqueo := (v->>'id')::uuid;
+
+  -- Y esas noches quedan ocupadas de verdad, no sólo marcadas.
+  PERFORM pg_temp.verificar('y esas noches quedan ocupadas',
+    EXISTS (
+      SELECT 1 FROM public.noches_ocupadas(v_complejo, v_unidad)
+       WHERE check_in = '2027-06-10'
+    ));
+
+  -- Cerrar lo mismo otra vez tiene que chocar, no duplicar.
+  v := public.bloquear(v_complejo, v_unidad, '2027-06-11', '2027-06-13', 'otra vez');
+  PERFORM pg_temp.verificar('cerrar algo ya cerrado no crea un segundo bloqueo',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'ocupada', v::text);
+  PERFORM pg_temp.verificar('y el mensaje dice que ya estaban cerradas',
+    v->>'mensaje' LIKE '%cerradas%', v::text);
+
+  -- Lo que importa: no se puede cerrar una noche VENDIDA.
+  INSERT INTO reservas (complejo_id, unidad_id, check_in, check_out, estado,
+                        origen, huesped_nombre, huesped_telefono, personas, importe)
+  VALUES (v_complejo, v_unidad, '2027-07-01', '2027-07-05', 'CONFIRMED', 'web',
+          'Huesped Vendido', '5491100002222', 2, 300000);
+
+  v := public.bloquear(v_complejo, v_unidad, '2027-07-02', '2027-07-04', 'la quiero yo');
+  PERFORM pg_temp.verificar('no se puede cerrar una noche ya vendida',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'ocupada', v::text);
+  -- Y dice QUIÉN la tiene, que es lo que el dueño necesita para decidir.
+  PERFORM pg_temp.verificar('y le dice al dueño quién la tiene',
+    v->'choca_con'->>'huesped' = 'Huesped Vendido', v::text);
+  PERFORM pg_temp.verificar('con el estado de esa reserva',
+    v->'choca_con'->>'estado' = 'CONFIRMED', v::text);
+
+  -- La unidad de otro complejo no se puede cerrar desde acá.
+  v := public.bloquear(v_complejo, v_vecina, '2027-06-10', '2027-06-14', NULL);
+  PERFORM pg_temp.verificar('no se puede cerrar una unidad de otro complejo',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'unidad_ajena', v::text);
+
+  -- Fechas al revés.
+  v := public.bloquear(v_complejo, v_unidad, '2027-06-20', '2027-06-20', NULL);
+  PERFORM pg_temp.verificar('la salida tiene que ser posterior a la entrada',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'fechas_invalidas', v::text);
+
+  -- La lista de lo cerrado.
+  PERFORM pg_temp.verificar('el bloqueo aparece en la lista de fechas cerradas',
+    EXISTS (SELECT 1 FROM public.bloqueos_del_complejo(v_complejo) WHERE id = v_bloqueo));
+  PERFORM pg_temp.verificar('con su motivo y sus noches',
+    EXISTS (
+      SELECT 1 FROM public.bloqueos_del_complejo(v_complejo)
+       WHERE id = v_bloqueo AND motivo = 'La pintamos' AND noches = 4
+    ));
+  -- Y la reserva vendida NO aparece ahí: son dos listas distintas.
+  PERFORM pg_temp.verificar('y la reserva de un huésped no aparece entre los bloqueos',
+    NOT EXISTS (
+      SELECT 1 FROM public.bloqueos_del_complejo(v_complejo) WHERE check_in = '2027-07-01'
+    ));
+
+  -- Reabrir.
+  v := public.reabrir(v_bloqueo);
+  PERFORM pg_temp.verificar('reabrir una fecha cerrada funciona', (v->>'ok')::boolean, v::text);
+  PERFORM pg_temp.verificar('y las noches quedan libres de verdad',
+    NOT EXISTS (
+      SELECT 1 FROM public.noches_ocupadas(v_complejo, v_unidad)
+       WHERE check_in = '2027-06-10'
+    ));
+  PERFORM pg_temp.verificar('y sale de la lista de fechas cerradas',
+    NOT EXISTS (SELECT 1 FROM public.bloqueos_del_complejo(v_complejo) WHERE id = v_bloqueo));
+
+  -- Reabrir dos veces lo dice en vez de fingir.
+  v := public.reabrir(v_bloqueo);
+  PERFORM pg_temp.verificar('reabrir dos veces lo dice en vez de contestar «listo»',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'no_es_un_bloqueo', v::text);
+
+  -- Y el botón de reabrir no puede tocar la reserva de un huésped.
+  v := public.reabrir((SELECT id FROM reservas
+                        WHERE unidad_id = v_unidad AND huesped_nombre = 'Huesped Vendido'));
+  PERFORM pg_temp.verificar('reabrir no puede cancelar la reserva de un huésped',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'no_es_un_bloqueo', v::text);
+  PERFORM pg_temp.verificar('y esa reserva sigue confirmada',
+    (SELECT estado FROM reservas
+      WHERE unidad_id = v_unidad AND huesped_nombre = 'Huesped Vendido') = 'CONFIRMED');
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+END $$;
+
+-- Y el vecino no puede cerrar ni reabrir nada ajeno.
+DO $$
+DECLARE
+  v_ok BOOLEAN := false;
+  v_bloqueo UUID;
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+  v_bloqueo := (public.bloquear('aaaaaaaa-0000-0000-0000-000000000001',
+                                'bbbbbbbb-0000-0000-0000-000000000002',
+                                '2027-08-01', '2027-08-05', 'mía')->>'id')::uuid;
+
+  PERFORM set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+
+  BEGIN
+    PERFORM public.bloquear('aaaaaaaa-0000-0000-0000-000000000001',
+                            'bbbbbbbb-0000-0000-0000-000000000002',
+                            '2027-09-01', '2027-09-05', 'colado');
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('el vecino no puede cerrar fechas de otro complejo', v_ok);
+
+  v_ok := false;
+  BEGIN
+    PERFORM public.reabrir(v_bloqueo);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('ni reabrir las de otro', v_ok);
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+
+  PERFORM pg_temp.verificar('y el bloqueo ajeno sigue en pie',
+    (SELECT estado FROM reservas WHERE id = v_bloqueo) = 'BLOCKED');
+END $$;
+
+
+-- ============================================
+-- 16. Precios desde el panel
+-- ============================================
+-- Un complejo propio, con las fechas calculadas desde `current_date`.
+--
+-- Los demás bloques usan fechas fijas de 2026/2027, y eso tiene fecha de
+-- vencimiento: el día que pase el 31/3/2027, la ventana de reservas del
+-- complejo de prueba va a estar vencida y las aserciones sobre precios futuros
+-- van a fallar sin que nadie haya roto nada. Acá no, porque lo que se prueba
+-- —la ventana, los agujeros, lo que vence— depende justamente de hoy.
+INSERT INTO complejos (id, slug, nombre, reservas_habilitadas)
+VALUES ('aaaaaaaa-0000-0000-0000-000000000003', 'posada-de-precios', 'Posada de Precios', true);
+
+INSERT INTO complejo_miembros (complejo_id, user_id)
+VALUES ('aaaaaaaa-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111');
+
+INSERT INTO unidades (id, complejo_id, codigo, nombre, capacidad_maxima, orden) VALUES
+  ('cccccccc-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000003', 'P1', 'Pieza Uno', 2, 1),
+  ('cccccccc-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000003', 'P2', 'Pieza Dos', 4, 2);
+
+DO $$
+DECLARE
+  v          JSONB;
+  v_id       UUID;
+  v_ok       BOOLEAN;
+  -- El mismo "hoy" que usa la función: el día en la zona del complejo, no
+  -- `current_date`, que es el del servidor. Entre las 21 de Argentina y la
+  -- medianoche UTC son días distintos, y la prueba fallaría tres horas por día.
+  v_hoy      DATE;
+  v_complejo UUID := 'aaaaaaaa-0000-0000-0000-000000000003';
+  v_p1       UUID := 'cccccccc-0000-0000-0000-000000000001';
+  v_p2       UUID := 'cccccccc-0000-0000-0000-000000000002';
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+
+  v_hoy := (now() AT TIME ZONE
+            (SELECT zona_horaria FROM complejos WHERE id = v_complejo))::date;
+
+  -- ----------------------------------------------------------------
+  -- Sin configuración de calendario no se vende nada, y lo dice
+  -- ----------------------------------------------------------------
+  v := public.salud_de_los_precios(v_complejo);
+  PERFORM pg_temp.verificar('sin config de calendario, la salud de precios lo dice',
+    (v->>'sin_config')::boolean = true AND (v->>'esta_bien')::boolean = false, v::text);
+
+  INSERT INTO config_calendario (complejo_id, primera_fecha, ultima_fecha, minimo_noches)
+  VALUES (v_complejo, NULL, v_hoy + 180, 1);
+
+  -- ----------------------------------------------------------------
+  -- Toda la ventana sin precio: 181 noches que nadie puede reservar
+  -- ----------------------------------------------------------------
+  v := public.salud_de_los_precios(v_complejo);
+  PERFORM pg_temp.verificar('la ventana entera sin períodos cuenta todas las noches',
+    (v->>'noches_sin_periodo')::int = 181, v::text);
+  PERFORM pg_temp.verificar('y dice desde qué noche empieza el agujero',
+    (v->>'primera_noche_sin_periodo')::date = v_hoy, v::text);
+  PERFORM pg_temp.verificar('y por lo tanto no está bien',
+    (v->>'esta_bien')::boolean = false);
+
+  -- ----------------------------------------------------------------
+  -- Cargar un período
+  -- ----------------------------------------------------------------
+  v := public.guardar_periodo(v_complejo, v_hoy, v_hoy + 180,
+         jsonb_build_object(v_p1::text, '50000', v_p2::text, '80000'), 'toda la ventana');
+  PERFORM pg_temp.verificar('el dueño puede cargar un período con sus precios',
+    (v->>'ok')::boolean = true AND (v->>'era_alta')::boolean = true
+    AND (v->>'unidades_con_precio')::int = 2, v::text);
+  v_id := (v->>'id')::uuid;
+
+  PERFORM pg_temp.verificar('y ahora la ventana no tiene agujeros',
+    (public.salud_de_los_precios(v_complejo)->>'esta_bien')::boolean = true,
+    public.salud_de_los_precios(v_complejo)::text);
+
+  -- Y la consecuencia de verdad: la página puede cotizar.
+  v := public.cotizar_estadia(v_p1, v_hoy + 10, v_hoy + 13);
+  PERFORM pg_temp.verificar('y la página puede cotizar con ese precio',
+    (v->>'ok')::boolean = true AND (v->>'total')::numeric = 150000, v::text);
+
+  -- ----------------------------------------------------------------
+  -- Leer lo cargado
+  -- ----------------------------------------------------------------
+  PERFORM pg_temp.verificar('el período aparece en la lista del panel',
+    (SELECT count(*) FROM public.periodos_del_complejo(v_complejo)) = 1);
+  PERFORM pg_temp.verificar('con sus noches y su etiqueta',
+    (SELECT noches = 181 AND etiqueta = 'toda la ventana'
+       FROM public.periodos_del_complejo(v_complejo)));
+  PERFORM pg_temp.verificar('y con una entrada por unidad, con nombre y precio',
+    (SELECT jsonb_array_length(precios) = 2
+            AND precios->0->>'codigo' = 'P1'
+            AND (precios->0->>'precio')::numeric = 50000
+       FROM public.periodos_del_complejo(v_complejo)));
+
+  -- ----------------------------------------------------------------
+  -- Dos períodos que se pisan
+  -- ----------------------------------------------------------------
+  -- Lo impide la restricción, no una lectura previa. Y el mensaje dice con qué
+  -- se pisa, que es lo que el dueño necesita para moverlo.
+  v := public.guardar_periodo(v_complejo, v_hoy + 100, v_hoy + 200,
+         jsonb_build_object(v_p1::text, '90000'), 'alta');
+  PERFORM pg_temp.verificar('un período que se pisa con otro no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'se_pisa', v::text);
+  PERFORM pg_temp.verificar('y el mensaje dice con qué período se pisa',
+    (v->'choca_con'->>'etiqueta') = 'toda la ventana'
+    AND (v->'choca_con'->>'desde')::date = v_hoy, v::text);
+
+  -- ----------------------------------------------------------------
+  -- Editar
+  -- ----------------------------------------------------------------
+  v := public.guardar_periodo(v_complejo, v_hoy, v_hoy + 99,
+         jsonb_build_object(v_p1::text, '55000', v_p2::text, '85000'),
+         'media', v_id);
+  PERFORM pg_temp.verificar('editar un período corrige sus fechas y sus precios',
+    (v->>'ok')::boolean = true AND (v->>'era_alta')::boolean = false
+    AND (v->>'noches')::int = 100, v::text);
+  PERFORM pg_temp.verificar('y el precio nuevo es el que cotiza',
+    (public.cotizar_estadia(v_p1, v_hoy + 10, v_hoy + 11)->>'total')::numeric = 55000);
+
+  -- Al acortarlo quedaron 81 noches sin período, y la salud lo dice.
+  v := public.salud_de_los_precios(v_complejo);
+  PERFORM pg_temp.verificar('acortar un período deja el resto de la ventana sin precio',
+    (v->>'noches_sin_periodo')::int = 81
+    AND (v->>'primera_noche_sin_periodo')::date = v_hoy + 100, v::text);
+
+  -- Ahora el segundo tramo entra, porque ya no se pisa.
+  v := public.guardar_periodo(v_complejo, v_hoy + 100, v_hoy + 180,
+         jsonb_build_object(v_p1::text, '90000', v_p2::text, '140000'), 'alta');
+  PERFORM pg_temp.verificar('y el tramo que antes se pisaba ahora entra',
+    (v->>'ok')::boolean = true, v::text);
+  PERFORM pg_temp.verificar('con la ventana otra vez entera',
+    (public.salud_de_los_precios(v_complejo)->>'esta_bien')::boolean = true);
+
+  -- Una estadía que cruza el corte paga cada noche a su precio.
+  v := public.cotizar_estadia(v_p1, v_hoy + 99, v_hoy + 101);
+  PERFORM pg_temp.verificar('una estadía que cruza el corte paga cada noche a su precio',
+    (v->>'total')::numeric = 55000 + 90000, v::text);
+
+  -- ----------------------------------------------------------------
+  -- Una unidad sin precio queda invendible, y eso se ve
+  -- ----------------------------------------------------------------
+  -- Esta es la falla silenciosa que motiva `salud_de_los_precios()`: el
+  -- período existe, el calendario muestra la unidad libre, y recién al pedir el
+  -- precio aparece que no hay.
+  v := public.guardar_periodo(v_complejo, v_hoy + 100, v_hoy + 180,
+         jsonb_build_object(v_p1::text, '90000', v_p2::text, ''),
+         'alta', (SELECT id FROM public.periodos_del_complejo(v_complejo)
+                   WHERE etiqueta = 'alta'));
+  PERFORM pg_temp.verificar('dejar una unidad sin precio está permitido',
+    (v->>'ok')::boolean = true AND (v->>'unidades_con_precio')::int = 1, v::text);
+
+  v := public.salud_de_los_precios(v_complejo);
+  PERFORM pg_temp.verificar('pero la salud de precios dice qué unidad quedó invendible',
+    jsonb_array_length(v->'unidades_sin_precio') = 1
+    AND v->'unidades_sin_precio'->0->>'codigo' = 'P2', v::text);
+  PERFORM pg_temp.verificar('con cuántas noches y desde cuándo',
+    (v->'unidades_sin_precio'->0->>'noches')::int = 81
+    AND (v->'unidades_sin_precio'->0->>'desde')::date = v_hoy + 100, v::text);
+  PERFORM pg_temp.verificar('y por lo tanto no está bien',
+    (v->>'esta_bien')::boolean = false);
+
+  -- La consecuencia de verdad, para que no sea una aserción sobre un informe.
+  v := public.cotizar_estadia(v_p2, v_hoy + 101, v_hoy + 103);
+  PERFORM pg_temp.verificar('y esa unidad no se puede cotizar en ese tramo',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'noche_sin_precio', v::text);
+  PERFORM pg_temp.verificar('mientras la otra sí',
+    (public.cotizar_estadia(v_p1, v_hoy + 101, v_hoy + 103)->>'ok')::boolean = true);
+
+  -- Volver a ponerle precio lo arregla.
+  v := public.guardar_periodo(v_complejo, v_hoy + 100, v_hoy + 180,
+         jsonb_build_object(v_p1::text, '90000', v_p2::text, '140000'),
+         'alta', (SELECT id FROM public.periodos_del_complejo(v_complejo)
+                   WHERE etiqueta = 'alta'));
+  PERFORM pg_temp.verificar('ponerle el precio de nuevo cierra el agujero',
+    (public.salud_de_los_precios(v_complejo)->>'esta_bien')::boolean = true);
+
+  -- ----------------------------------------------------------------
+  -- La unidad fuera de circulación no es un agujero
+  -- ----------------------------------------------------------------
+  -- `unidades.activa` existe desde la 001 y lo respetan `complejo_publico()` y
+  -- `crear_reserva()`. Así que una unidad inactiva sin precio NO es un
+  -- problema: no se puede reservar por otro motivo.
+  --
+  -- La primera versión de `salud_de_los_precios()` contaba todas las unidades,
+  -- y le habría puesto un rojo permanente al dueño que saca la cabaña chica en
+  -- invierno —que es el caso normal, no el raro—.
+  UPDATE unidades SET activa = false WHERE id = v_p2;
+  v := public.guardar_periodo(v_complejo, v_hoy + 100, v_hoy + 180,
+         jsonb_build_object(v_p1::text, '90000', v_p2::text, ''),
+         'alta', (SELECT id FROM public.periodos_del_complejo(v_complejo)
+                   WHERE etiqueta = 'alta'));
+  PERFORM pg_temp.verificar('sacar una unidad de circulación y dejarla sin precio está bien',
+    (v->>'ok')::boolean = true, v::text);
+
+  v := public.salud_de_los_precios(v_complejo);
+  PERFORM pg_temp.verificar('y la salud de precios no la cuenta como agujero',
+    jsonb_array_length(v->'unidades_sin_precio') = 0
+    AND (v->>'esta_bien')::boolean = true, v::text);
+  PERFORM pg_temp.verificar('y cuenta una sola unidad vendible, no dos',
+    (v->>'unidades')::int = 1, v::text);
+
+  -- Pero el formulario tiene que seguir viéndola, porque los precios se
+  -- reemplazan enteros: si no apareciera, guardar le borraría el precio y el
+  -- día que el dueño la reactive quedaría invendible en silencio.
+  PERFORM pg_temp.verificar('pero la lista del panel la sigue mostrando, marcada',
+    (SELECT jsonb_array_length(precios) = 2
+            AND EXISTS (SELECT 1 FROM jsonb_array_elements(precios) AS e
+                         WHERE e->>'codigo' = 'P2' AND (e->>'activa')::boolean = false)
+       FROM public.periodos_del_complejo(v_complejo)
+      WHERE etiqueta = 'alta'));
+
+  -- Y al reactivarla, el agujero reaparece: es el mismo agujero de antes.
+  UPDATE unidades SET activa = true WHERE id = v_p2;
+  PERFORM pg_temp.verificar('y al volver a activarla el agujero reaparece',
+    (public.salud_de_los_precios(v_complejo)->>'esta_bien')::boolean = false);
+
+  -- Se le pone el precio y queda bien.
+  PERFORM public.guardar_periodo(v_complejo, v_hoy + 100, v_hoy + 180,
+            jsonb_build_object(v_p1::text, '90000', v_p2::text, '140000'),
+            'alta', (SELECT id FROM public.periodos_del_complejo(v_complejo)
+                      WHERE etiqueta = 'alta'));
+  PERFORM pg_temp.verificar('y con el precio puesto vuelve a estar todo cotizable',
+    (public.salud_de_los_precios(v_complejo)->>'esta_bien')::boolean = true);
+
+  -- ----------------------------------------------------------------
+  -- Lo que no es un precio
+  -- ----------------------------------------------------------------
+  v := public.guardar_periodo(v_complejo, v_hoy + 300, v_hoy + 310,
+         jsonb_build_object(v_p1::text, '0'));
+  PERFORM pg_temp.verificar('un precio en cero no entra, y el mensaje nombra la unidad',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'precio_no_positivo'
+    AND v->>'mensaje' LIKE '%Pieza Uno%', v::text);
+
+  v := public.guardar_periodo(v_complejo, v_hoy + 300, v_hoy + 310,
+         jsonb_build_object(v_p1::text, 'gratis'));
+  PERFORM pg_temp.verificar('un precio que no es un número tampoco, y no revienta',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'precio_invalido'
+    AND v->>'mensaje' LIKE '%Pieza Uno%', v::text);
+
+  v := public.guardar_periodo(v_complejo, v_hoy + 300, v_hoy + 310,
+         jsonb_build_object('no-soy-un-uuid', '50000'));
+  PERFORM pg_temp.verificar('una clave que no es un id tampoco, y no revienta',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'precios_invalidos', v::text);
+
+  -- La coma decimal, que es como se escribe un precio acá.
+  v := public.guardar_periodo(v_complejo, v_hoy + 300, v_hoy + 310,
+         jsonb_build_object(v_p1::text, '1234,50'), 'con coma');
+  PERFORM pg_temp.verificar('un precio con coma decimal se guarda bien',
+    (v->>'ok')::boolean = true, v::text);
+  PERFORM pg_temp.verificar('y vale lo que dice',
+    (SELECT precio FROM precios_unidad
+      WHERE periodo_id = (v->>'id')::uuid AND unidad_id = v_p1) = 1234.50);
+
+  v := public.guardar_periodo(v_complejo, v_hoy + 20, v_hoy + 10,
+         jsonb_build_object(v_p1::text, '50000'));
+  PERFORM pg_temp.verificar('un tramo al revés no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'fechas_invalidas', v::text);
+
+  -- ----------------------------------------------------------------
+  -- Borrar
+  -- ----------------------------------------------------------------
+  -- El período «con coma» está en hoy+300, más allá de `ultima_fecha`. Borrarlo
+  -- no deja ninguna noche RESERVABLE sin precio, y el aviso no tiene que
+  -- contarlas: un aviso sobre algo que no es un problema es el que enseña a
+  -- ignorar los avisos. (La primera versión de `borrar_periodo()` decía 11.)
+  v := public.borrar_periodo((SELECT id FROM public.periodos_del_complejo(v_complejo)
+                               WHERE etiqueta = 'con coma'));
+  PERFORM pg_temp.verificar('borrar un período fuera de la ventana no avisa de nada',
+    (v->>'ok')::boolean = true
+    AND (v->>'noches_que_quedaron_sin_precio')::int = 0, v::text);
+
+  v := public.borrar_periodo((SELECT id FROM public.periodos_del_complejo(v_complejo)
+                               WHERE etiqueta = 'alta'));
+  PERFORM pg_temp.verificar('borrar uno de la ventana avisa cuántas noches quedaron sin precio',
+    (v->>'ok')::boolean = true
+    AND (v->>'noches_que_quedaron_sin_precio')::int = 81, v::text);
+
+  PERFORM pg_temp.verificar('y sus precios se fueron con él',
+    (SELECT count(*) FROM precios_unidad pu
+      JOIN periodos_precio p ON p.id = pu.periodo_id
+     WHERE p.complejo_id = v_complejo) = 2);
+
+  v := public.borrar_periodo(gen_random_uuid());
+  PERFORM pg_temp.verificar('borrar algo que no está lo dice en vez de contestar «listo»',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'no_existe', v::text);
+
+  -- ----------------------------------------------------------------
+  -- La ventana que vence sola
+  -- ----------------------------------------------------------------
+  -- `ultima_fecha` es una fecha que se pasa sin que nadie la toque. El día que
+  -- pasa, el calendario deja de ofrecer todo y nada avisa. De las tres fallas
+  -- que esta función busca, es la que le va a pasar a todos los clientes.
+  UPDATE config_calendario SET ultima_fecha = v_hoy - 1 WHERE complejo_id = v_complejo;
+  v := public.salud_de_los_precios(v_complejo);
+  PERFORM pg_temp.verificar('una ventana de reservas vencida se detecta',
+    (v->>'ventana_vencida')::boolean = true AND (v->>'esta_bien')::boolean = false, v::text);
+  PERFORM pg_temp.verificar('y dice hace cuántos días venció',
+    (v->>'dias_hasta_el_cierre')::int = -1, v::text);
+
+  UPDATE config_calendario SET ultima_fecha = v_hoy + 30 WHERE complejo_id = v_complejo;
+  PERFORM pg_temp.verificar('y cuántos faltan cuando no venció',
+    (public.salud_de_los_precios(v_complejo)->>'dias_hasta_el_cierre')::int = 30);
+
+  -- Y si la temporada todavía no abrió, la ventana arranca en `primera_fecha` y
+  -- no hoy: las noches de antes no son un agujero, no se venden nunca.
+  UPDATE config_calendario
+     SET primera_fecha = v_hoy + 10, ultima_fecha = v_hoy + 30
+   WHERE complejo_id = v_complejo;
+  v := public.salud_de_los_precios(v_complejo);
+  PERFORM pg_temp.verificar('una temporada que todavía no abrió arranca en su primera fecha',
+    (v->>'ventana_desde')::date = v_hoy + 10, v::text);
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+END $$;
+
+-- Y nada de esto lo puede tocar el vecino.
+DO $$
+DECLARE
+  v_ok    BOOLEAN;
+  v_ajeno UUID;
+BEGIN
+  v_ajeno := (SELECT id FROM periodos_precio
+               WHERE complejo_id = 'aaaaaaaa-0000-0000-0000-000000000003' LIMIT 1);
+
+  PERFORM set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+
+  v_ok := false;
+  BEGIN
+    PERFORM public.periodos_del_complejo('aaaaaaaa-0000-0000-0000-000000000003');
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('el vecino no puede leer los períodos de otro complejo', v_ok);
+
+  v_ok := false;
+  BEGIN
+    PERFORM public.salud_de_los_precios('aaaaaaaa-0000-0000-0000-000000000003');
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('ni su salud de precios', v_ok);
+
+  v_ok := false;
+  BEGIN
+    PERFORM public.guardar_periodo('aaaaaaaa-0000-0000-0000-000000000003',
+      current_date, current_date + 5,
+      jsonb_build_object('cccccccc-0000-0000-0000-000000000001', '1'));
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('ni cargarle precios', v_ok);
+
+  v_ok := false;
+  BEGIN
+    PERFORM public.borrar_periodo(v_ajeno);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('ni borrarle un período', v_ok);
+
+  -- Y el agujero que esto tapa: la unidad ajena mandada en el payload de un
+  -- complejo propio. `guardar_periodo()` es SECURITY DEFINER, así que la policy
+  -- de `precios_unidad` no corre: sin la validación explícita, esto pasaría.
+  v_ok := false;
+  BEGIN
+    PERFORM public.guardar_periodo('aaaaaaaa-0000-0000-0000-000000000002',
+      current_date, current_date + 5,
+      jsonb_build_object('cccccccc-0000-0000-0000-000000000001', '99999'));
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('ni ponerle precio a una unidad ajena desde su propio complejo', v_ok);
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+
+  PERFORM pg_temp.verificar('y el período ajeno sigue en pie',
+    (SELECT count(*) FROM periodos_precio WHERE id = v_ajeno) = 1);
+END $$;
+
+
+-- ============================================
+-- 17. Las reglas del calendario desde el panel
+-- ============================================
+-- Sigue sobre el complejo de la 16 ('posada-de-precios'), que al final del
+-- bloque anterior quedó con `primera_fecha = hoy+10`, `ultima_fecha = hoy+30`
+-- y un solo período de precios de hoy a hoy+99.
+--
+-- Lo que importa de este bloque: cada regla que se guarda se comprueba contra
+-- `crear_reserva()`, no contra el informe. Que la función devuelva `ok: true`
+-- sólo dice que escribió una fila; lo que hay que saber es si la página deja o
+-- no deja reservar.
+DO $$
+DECLARE
+  v          JSONB;
+  v_id       UUID;
+  v_hoy      DATE;
+  v_complejo UUID := 'aaaaaaaa-0000-0000-0000-000000000003';
+  v_p1       UUID := 'cccccccc-0000-0000-0000-000000000001';
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+  v_hoy := (now() AT TIME ZONE
+            (SELECT zona_horaria FROM complejos WHERE id = v_complejo))::date;
+
+  -- Esta posada necesita slug para que `crear_reserva()` la encuentre, y un
+  -- precio en toda la ventana para que pueda cotizar.
+  PERFORM public.guardar_periodo(v_complejo, v_hoy, v_hoy + 400,
+            jsonb_build_object(v_p1::text, '50000'), 'todo',
+            (SELECT id FROM public.periodos_del_complejo(v_complejo) LIMIT 1));
+
+  -- ----------------------------------------------------------------
+  -- La ventana de reservas
+  -- ----------------------------------------------------------------
+  v := public.guardar_config_calendario(v_complejo, v_hoy + 120, 2::smallint, NULL);
+  PERFORM pg_temp.verificar('el dueño puede mover hasta cuándo se vende',
+    (v->>'ok')::boolean = true AND (v->>'dias_hasta_el_cierre')::int = 120, v::text);
+  PERFORM pg_temp.verificar('y la ventana nueva no tiene noches sin precio',
+    (v->>'noches_sin_precio')::int = 0, v::text);
+
+  -- Y la consecuencia: antes de mover la ventana, hoy+100 no se podía pedir.
+  v := public.crear_reserva('posada-de-precios', v_p1, v_hoy + 100, v_hoy + 104,
+         2::smallint, 'Prueba Ventana', '30111222', 'v@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('y ahora se puede reservar dentro de la ventana nueva',
+    (v->>'ok')::boolean = true, v::text);
+
+  -- Más allá sigue sin poderse, que es el punto de que la ventana exista.
+  v := public.crear_reserva('posada-de-precios', v_p1, v_hoy + 130, v_hoy + 134,
+         2::smallint, 'Prueba Afuera', '30111223', 'a@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('pero no más allá del día que puso el dueño',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'despues_de_la_ventana', v::text);
+
+  -- Estirar la ventana a un tramo sin precio lo dice en el acto. Es el error
+  -- que se comete de verdad: estirar hasta marzo y olvidarse de los precios de
+  -- marzo. Ahí el huésped elige fechas y recién después no hay precio.
+  v := public.guardar_config_calendario(v_complejo, v_hoy + 500, 2::smallint, NULL);
+  PERFORM pg_temp.verificar('estirar la ventana más allá de los precios lo avisa al guardar',
+    (v->>'ok')::boolean = true AND (v->>'noches_sin_precio')::int = 100, v::text);
+
+  -- ----------------------------------------------------------------
+  -- Lo que no es una ventana
+  -- ----------------------------------------------------------------
+  v := public.guardar_config_calendario(v_complejo, NULL, 2::smallint, NULL);
+  PERFORM pg_temp.verificar('sin hasta cuándo no se guarda nada',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'falta_ultima_fecha', v::text);
+
+  v := public.guardar_config_calendario(v_complejo, v_hoy + 10, 2::smallint, v_hoy + 20);
+  PERFORM pg_temp.verificar('una ventana al revés no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'fechas_invalidas', v::text);
+
+  v := public.guardar_config_calendario(v_complejo, v_hoy + 100, 99::smallint, NULL);
+  PERFORM pg_temp.verificar('un mínimo de 99 noches no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'minimo_invalido', v::text);
+
+  -- Una ventana ya vencida SÍ se guarda, y lo dice. Negárselo lo dejaría sin
+  -- poder escribir nada mientras corrige.
+  v := public.guardar_config_calendario(v_complejo, v_hoy - 5, 2::smallint, NULL);
+  PERFORM pg_temp.verificar('una ventana ya vencida se guarda pero lo dice',
+    (v->>'ok')::boolean = true AND (v->>'ventana_vencida')::boolean = true, v::text);
+  PERFORM pg_temp.verificar('y la salud de precios la pone en rojo',
+    (public.salud_de_los_precios(v_complejo)->>'ventana_vencida')::boolean = true);
+
+  -- Y con la ventana vencida no se puede reservar NADA, que es la falla
+  -- silenciosa que todo esto existe para que el dueño pueda arreglar solo.
+  v := public.crear_reserva('posada-de-precios', v_p1, v_hoy + 5, v_hoy + 9,
+         2::smallint, 'Prueba Vencida', '30111224', 'x@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('con la ventana vencida no se puede reservar nada',
+    (v->>'ok')::boolean = false, v::text);
+
+  -- Y el dueño lo arregla solo, que es el punto del bloque.
+  v := public.guardar_config_calendario(v_complejo, v_hoy + 400, 2::smallint, NULL);
+  PERFORM pg_temp.verificar('y el dueño lo arregla solo moviendo la fecha',
+    (v->>'ok')::boolean = true AND (v->>'ventana_vencida')::boolean = false, v::text);
+  v := public.crear_reserva('posada-de-precios', v_p1, v_hoy + 5, v_hoy + 9,
+         2::smallint, 'Prueba Arreglada', '30111225', 'y@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('y se vuelve a poder reservar',
+    (v->>'ok')::boolean = true, v::text);
+
+  -- ----------------------------------------------------------------
+  -- Los mínimos por tramo: la ex-constante del código
+  -- ----------------------------------------------------------------
+  -- En la página vieja la temporada alta era una constante: 20/12 al 1/3, siete
+  -- noches, entrada sábado o domingo. Esto es cargarla sin tocar un archivo.
+  v := public.guardar_minimo(v_complejo, v_hoy + 200, v_hoy + 260, 7::smallint,
+         ARRAY[6, 0]::smallint[], 'temporada alta');
+  PERFORM pg_temp.verificar('el dueño puede cargar un mínimo por tramo',
+    (v->>'ok')::boolean = true AND (v->>'cualquier_dia')::boolean = false, v::text);
+  v_id := (v->>'id')::uuid;
+
+  -- Cuatro noches en un tramo de siete: no entra.
+  v := public.crear_reserva('posada-de-precios', v_p1, v_hoy + 205, v_hoy + 209,
+         2::smallint, 'Prueba Minimo', '30111226', 'm@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('y cuatro noches no entran en un tramo de siete',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'pocas_noches'
+    AND (v->>'minimo')::int = 7, v::text);
+
+  -- Siete noches pero entrando un día que no es sábado ni domingo: tampoco.
+  v := public.crear_reserva('posada-de-precios', v_p1,
+         v_hoy + 200 + ((9 - extract(dow FROM v_hoy + 200)::int) % 7), -- cae en martes
+         v_hoy + 207 + ((9 - extract(dow FROM v_hoy + 200)::int) % 7),
+         2::smallint, 'Prueba Dia', '30111227', 'd@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('ni siete noches entrando un martes',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'dia_de_entrada', v::text);
+
+  -- Siete noches entrando sábado: sí.
+  v := public.crear_reserva('posada-de-precios', v_p1,
+         v_hoy + 200 + ((13 - extract(dow FROM v_hoy + 200)::int) % 7), -- cae en sábado
+         v_hoy + 207 + ((13 - extract(dow FROM v_hoy + 200)::int) % 7),
+         2::smallint, 'Prueba Sabado', '30111228', 's@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('pero sí siete noches entrando sábado',
+    (v->>'ok')::boolean = true, v::text);
+
+  -- ----------------------------------------------------------------
+  -- Los días de entrada, normalizados
+  -- ----------------------------------------------------------------
+  -- Siete días elegidos es «cualquier día», y se guarda como NULL. Si se
+  -- guardara como arreglo, la página le diría al huésped «se puede entrar
+  -- domingo, lunes, martes…» en vez de no decir nada.
+  v := public.guardar_minimo(v_complejo, v_hoy + 200, v_hoy + 260, 7::smallint,
+         ARRAY[0,1,2,3,4,5,6]::smallint[], 'temporada alta', v_id);
+  PERFORM pg_temp.verificar('elegir los siete días es no restringir ninguno',
+    (v->>'ok')::boolean = true AND (v->>'cualquier_dia')::boolean = true, v::text);
+  PERFORM pg_temp.verificar('y se guarda como nulo, no como los siete',
+    (SELECT dias_checkin IS NULL FROM minimos_noches WHERE id = v_id));
+
+  v := public.guardar_minimo(v_complejo, v_hoy + 200, v_hoy + 260, 7::smallint,
+         ARRAY[]::smallint[], 'temporada alta', v_id);
+  PERFORM pg_temp.verificar('un arreglo vacío tampoco deja el tramo invendible',
+    (v->>'cualquier_dia')::boolean = true, v::text);
+
+  v := public.guardar_minimo(v_complejo, v_hoy + 200, v_hoy + 260, 7::smallint,
+         ARRAY[6,0,6,9,-1]::smallint[], 'temporada alta', v_id);
+  PERFORM pg_temp.verificar('los días repetidos y los que no existen se limpian',
+    (v->'dias_checkin')::text = '[0, 6]', v::text);
+
+  -- ----------------------------------------------------------------
+  -- Dos tramos que se pisan
+  -- ----------------------------------------------------------------
+  v := public.guardar_minimo(v_complejo, v_hoy + 250, v_hoy + 300, 3::smallint,
+         NULL, 'media');
+  PERFORM pg_temp.verificar('un tramo de mínimos que se pisa con otro no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'se_pisa', v::text);
+  PERFORM pg_temp.verificar('y dice con cuál y de cuántas noches',
+    v->'choca_con'->>'etiqueta' = 'temporada alta'
+    AND (v->'choca_con'->>'noches')::int = 7, v::text);
+
+  -- Pegado pero sin pisarse, sí.
+  v := public.guardar_minimo(v_complejo, v_hoy + 261, v_hoy + 300, 3::smallint,
+         NULL, 'media');
+  PERFORM pg_temp.verificar('pegado al anterior sin pisarse, entra',
+    (v->>'ok')::boolean = true, v::text);
+
+  v := public.guardar_minimo(v_complejo, v_hoy + 200, v_hoy + 260, 99::smallint,
+         NULL, 'imposible');
+  PERFORM pg_temp.verificar('un mínimo de 99 noches por tramo tampoco entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'noches_invalidas', v::text);
+
+  -- ----------------------------------------------------------------
+  -- Borrar un tramo dice a qué mínimo vuelven esas noches
+  -- ----------------------------------------------------------------
+  -- Sin eso, el dueño borra el tramo de enero creyendo que queda sin mínimo y
+  -- se encuentra con que ahora se puede reservar una sola noche en temporada.
+  v := public.borrar_minimo(v_id);
+  PERFORM pg_temp.verificar('borrar un tramo dice a qué mínimo general vuelven',
+    (v->>'ok')::boolean = true AND (v->>'vuelven_al_minimo_general')::int = 2, v::text);
+
+  v := public.borrar_minimo(v_id);
+  PERFORM pg_temp.verificar('borrarlo dos veces lo dice en vez de contestar «listo»',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'no_existe', v::text);
+
+  -- ----------------------------------------------------------------
+  -- Los bloques que van enteros
+  -- ----------------------------------------------------------------
+  v := public.guardar_bloque_fijo(v_complejo, v_hoy + 310, v_hoy + 313, 'finde largo');
+  PERFORM pg_temp.verificar('el dueño puede cargar un bloque que va entero',
+    (v->>'ok')::boolean = true AND (v->>'noches')::int = 3, v::text);
+  v_id := (v->>'id')::uuid;
+
+  -- Y lo que el bloque existe para evitar: que se lo partan.
+  v := public.crear_reserva('posada-de-precios', v_p1, v_hoy + 310, v_hoy + 312,
+         2::smallint, 'Prueba Partido', '30111229', 'p@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('y nadie puede tomar dos de sus tres noches',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'bloque_fijo', v::text);
+
+  v := public.crear_reserva('posada-de-precios', v_p1, v_hoy + 310, v_hoy + 313,
+         2::smallint, 'Prueba Entero', '30111230', 'e@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('pero sí las tres juntas',
+    (v->>'ok')::boolean = true, v::text);
+
+  v := public.guardar_bloque_fijo(v_complejo, v_hoy + 312, v_hoy + 315, 'otro');
+  PERFORM pg_temp.verificar('dos bloques que se pisan no pueden coexistir',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'se_pisa', v::text);
+  PERFORM pg_temp.verificar('y dice con cuál',
+    v->'choca_con'->>'etiqueta' = 'finde largo', v::text);
+
+  v := public.guardar_bloque_fijo(v_complejo, v_hoy + 320, v_hoy + 320, 'de cero noches');
+  PERFORM pg_temp.verificar('un bloque de cero noches no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'fechas_invalidas', v::text);
+
+  v := public.borrar_bloque_fijo(v_id);
+  PERFORM pg_temp.verificar('borrar el bloque devuelve esas noches de a una',
+    (v->>'ok')::boolean = true, v::text);
+
+  -- ----------------------------------------------------------------
+  -- Leer las reglas
+  -- ----------------------------------------------------------------
+  PERFORM public.guardar_minimo(v_complejo, v_hoy - 100, v_hoy - 50, 5::smallint,
+            NULL, 'temporada pasada');
+  PERFORM public.guardar_minimo(v_complejo, v_hoy - 10, v_hoy + 10, 4::smallint,
+            NULL, 'el de ahora');
+
+  v := public.reglas_del_calendario(v_complejo);
+  PERFORM pg_temp.verificar('las reglas vienen juntas, con la config adentro',
+    (v->'config'->>'ultima_fecha')::date = v_hoy + 400
+    AND (v->'config'->>'minimo_noches')::int = 2, v::text);
+  PERFORM pg_temp.verificar('un tramo de la temporada pasada no aparece',
+    NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v->'minimos') AS e
+                 WHERE e->>'etiqueta' = 'temporada pasada'), v::text);
+  PERFORM pg_temp.verificar('pero el tramo en curso sí, aunque haya arrancado antes de hoy',
+    EXISTS (SELECT 1 FROM jsonb_array_elements(v->'minimos') AS e
+             WHERE e->>'etiqueta' = 'el de ahora'), v::text);
+  PERFORM pg_temp.verificar('y los bloques vienen en la misma respuesta',
+    jsonb_typeof(v->'bloques') = 'array', v::text);
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+END $$;
+
+-- Un complejo sin configuración todavía: es el estado de uno recién creado, y
+-- la pantalla tiene que poder mostrarlo.
+DO $$
+DECLARE v JSONB;
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+  v := public.reglas_del_calendario('aaaaaaaa-0000-0000-0000-000000000002');
+  PERFORM pg_temp.verificar('un complejo sin config devuelve config nula, no un error',
+    v->'config' = 'null'::jsonb AND jsonb_array_length(v->'minimos') = 0, v::text);
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+END $$;
+
+-- Y nada de esto lo puede tocar el vecino.
+DO $$
+DECLARE
+  v_ok    BOOLEAN;
+  v_ajeno UUID;
+BEGIN
+  v_ajeno := (SELECT id FROM minimos_noches
+               WHERE complejo_id = 'aaaaaaaa-0000-0000-0000-000000000003' LIMIT 1);
+
+  PERFORM set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+
+  v_ok := false;
+  BEGIN
+    PERFORM public.guardar_config_calendario('aaaaaaaa-0000-0000-0000-000000000003',
+      current_date + 10, 1::smallint, NULL);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('el vecino no puede mover la ventana de otro complejo', v_ok);
+
+  v_ok := false;
+  BEGIN
+    PERFORM public.reglas_del_calendario('aaaaaaaa-0000-0000-0000-000000000003');
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('ni leer sus reglas', v_ok);
+
+  v_ok := false;
+  BEGIN
+    PERFORM public.borrar_minimo(v_ajeno);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('ni borrarle un tramo de mínimos', v_ok);
+
+  v_ok := false;
+  BEGIN
+    PERFORM public.guardar_minimo('aaaaaaaa-0000-0000-0000-000000000003',
+      current_date, current_date + 5, 2::smallint, NULL, 'colado', v_ajeno);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('ni editárselo', v_ok);
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+
+  PERFORM pg_temp.verificar('y el tramo ajeno sigue como estaba',
+    (SELECT etiqueta FROM minimos_noches WHERE id = v_ajeno) <> 'colado');
+END $$;
+
+
+-- ============================================
+-- 18. Los datos del complejo y sus unidades
+-- ============================================
+-- El bloque arregla una mentira que ya estaba viva: el panel decía «se carga en
+-- los datos del complejo» y esa pantalla no existía.
+DO $$
+DECLARE
+  v          JSONB;
+  v_id       UUID;
+  v_ok       BOOLEAN;
+  v_hoy      DATE;
+  v_complejo UUID := 'aaaaaaaa-0000-0000-0000-000000000003';
+  v_p1       UUID := 'cccccccc-0000-0000-0000-000000000001';
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+  v_hoy := (now() AT TIME ZONE
+            (SELECT zona_horaria FROM complejos WHERE id = v_complejo))::date;
+
+  -- ----------------------------------------------------------------
+  -- El dato que cuesta plata
+  -- ----------------------------------------------------------------
+  -- Sin `datos_transferencia` el huésped reserva, ve cuánto tiene que señar y
+  -- no sabe a dónde mandarlo. La respuesta lo dice para que el aviso del panel
+  -- se apague en el acto cuando el dueño lo arregla.
+  v := public.guardar_datos_del_complejo(v_complejo, 'Posada de Precios');
+  PERFORM pg_temp.verificar('guardar los datos dice que falta dónde transferir',
+    (v->>'ok')::boolean = true AND (v->>'falta_donde_transferir')::boolean = true, v::text);
+
+  v := public.guardar_datos_del_complejo(v_complejo, 'Posada de Precios',
+         NULL, 'Alias: posada.precios / CBU 0000003100000000000001');
+  PERFORM pg_temp.verificar('y cuando se carga, deja de faltar',
+    (v->>'falta_donde_transferir')::boolean = false, v::text);
+  PERFORM pg_temp.verificar('y el huésped lo ve en los datos para transferir',
+    (public.datos_para_transferir('posada-de-precios')->>'datos_transferencia')
+      LIKE 'Alias: posada.precios%');
+
+  -- ----------------------------------------------------------------
+  -- El WhatsApp se limpia, no se rechaza
+  -- ----------------------------------------------------------------
+  -- El dueño lo copia del teléfono, donde viene con `+` y espacios, y la página
+  -- arma un `wa.me/<numero>` que no acepta nada más que dígitos. Hacerle borrar
+  -- los espacios a mano sería pedirle que haga el trabajo de un regexp.
+  v := public.guardar_datos_del_complejo(v_complejo, 'Posada de Precios',
+         '+54 9 223 555-0000');
+  PERFORM pg_temp.verificar('un WhatsApp con + y espacios se guarda limpio',
+    v->>'whatsapp' = '5492235550000', v::text);
+  PERFORM pg_temp.verificar('y deja de faltar',
+    (v->>'falta_whatsapp')::boolean = false, v::text);
+
+  v := public.guardar_datos_del_complejo(v_complejo, 'Posada de Precios', '2235');
+  PERFORM pg_temp.verificar('un número demasiado corto no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'whatsapp_corto', v::text);
+  PERFORM pg_temp.verificar('y el mensaje muestra lo que el dueño escribió',
+    v->>'mensaje' LIKE '%2235%', v::text);
+  PERFORM pg_temp.verificar('y el que estaba guardado sigue ahí',
+    (SELECT whatsapp FROM complejos WHERE id = v_complejo) = '5492235550000');
+
+  -- ----------------------------------------------------------------
+  -- No mandar un campo lo deja como estaba; mandarlo vacío lo borra
+  -- ----------------------------------------------------------------
+  v := public.guardar_datos_del_complejo(v_complejo, 'Posada de Precios');
+  PERFORM pg_temp.verificar('no mandar el WhatsApp no lo borra',
+    (SELECT whatsapp FROM complejos WHERE id = v_complejo) = '5492235550000', v::text);
+
+  v := public.guardar_datos_del_complejo(v_complejo, 'Posada de Precios', '');
+  PERFORM pg_temp.verificar('mandarlo vacío sí lo borra, que es lo que se pidió',
+    (SELECT whatsapp IS NULL FROM complejos WHERE id = v_complejo), v::text);
+
+  -- Y el nombre no puede quedar vacío: es lo que ve el huésped.
+  v := public.guardar_datos_del_complejo(v_complejo, '   ');
+  PERFORM pg_temp.verificar('el complejo no se puede quedar sin nombre',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'falta_nombre', v::text);
+
+  -- ----------------------------------------------------------------
+  -- La seña y su plazo
+  -- ----------------------------------------------------------------
+  v := public.guardar_datos_del_complejo(v_complejo, 'Posada de Precios',
+         NULL, NULL, NULL, NULL, 30::numeric, 24::smallint);
+  PERFORM pg_temp.verificar('el dueño puede cambiar la seña y el plazo',
+    (v->>'ok')::boolean = true
+    AND (SELECT porcentaje_sena = 30 AND horas_vencimiento_sena = 24
+           FROM complejos WHERE id = v_complejo), v::text);
+
+  -- Y la consecuencia: la cotización que ve el huésped usa el porcentaje nuevo.
+  PERFORM pg_temp.verificar('y la seña que se le pide al huésped cambia con eso',
+    (public.cotizar_estadia(v_p1, v_hoy + 50, v_hoy + 52)->>'sena')::numeric
+      = round((public.cotizar_estadia(v_p1, v_hoy + 50, v_hoy + 52)->>'total')::numeric * 30 / 100));
+
+  v := public.guardar_datos_del_complejo(v_complejo, 'Posada de Precios',
+         NULL, NULL, NULL, NULL, 0::numeric);
+  PERFORM pg_temp.verificar('una seña de 0% no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'porcentaje_invalido', v::text);
+
+  v := public.guardar_datos_del_complejo(v_complejo, 'Posada de Precios',
+         NULL, NULL, NULL, NULL, NULL, 500::smallint);
+  PERFORM pg_temp.verificar('un plazo de 500 horas tampoco',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'horas_invalidas', v::text);
+
+  -- ----------------------------------------------------------------
+  -- El slug no se toca
+  -- ----------------------------------------------------------------
+  -- El dueño mandó el link de su página por WhatsApp a cada huésped. La función
+  -- no ofrece el campo, y el trigger de la 007 lo prohíbe de todos modos.
+  PERFORM pg_temp.verificar('guardar los datos no le cambia la dirección a la página',
+    (SELECT slug FROM complejos WHERE id = v_complejo) = 'posada-de-precios');
+
+  v_ok := false;
+  BEGIN
+    UPDATE complejos SET slug = 'otra-cosa' WHERE id = v_complejo;
+  EXCEPTION WHEN check_violation THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('y cambiarlo a mano sigue prohibido', v_ok);
+
+  -- ----------------------------------------------------------------
+  -- Prender y apagar el alta pública
+  -- ----------------------------------------------------------------
+  -- Prender con la casa a medio cargar es peor que no prender: la página queda
+  -- abierta, no deja reservar nada igual, y el dueño cree que está vendiendo.
+  UPDATE config_calendario SET ultima_fecha = v_hoy + 900 WHERE complejo_id = v_complejo;
+  v := public.habilitar_reservas(v_complejo, true);
+  PERFORM pg_temp.verificar('prender con noches sin precio avisa que no se puede reservar',
+    (v->>'ok')::boolean = true
+    AND (v->>'pero_no_se_puede_reservar')::boolean = true, v::text);
+
+  -- Y con TODO cargado no avisa nada. El bloque 17 dejó el único período con
+  -- precio sólo para P1, así que primero hay que ponerle precio a P2: si no, el
+  -- aviso sigue siendo correcto y lo que estaría mal es la aserción.
+  UPDATE config_calendario SET ultima_fecha = v_hoy + 400 WHERE complejo_id = v_complejo;
+  PERFORM public.guardar_periodo(v_complejo, v_hoy, v_hoy + 400,
+            jsonb_build_object(v_p1::text, '50000',
+                               'cccccccc-0000-0000-0000-000000000002', '80000'),
+            'todo', (SELECT id FROM public.periodos_del_complejo(v_complejo) LIMIT 1));
+  v := public.habilitar_reservas(v_complejo, true);
+  PERFORM pg_temp.verificar('y con todo cargado no avisa nada',
+    (v->>'pero_no_se_puede_reservar')::boolean = false, v::text);
+
+  v := public.crear_reserva('posada-de-precios', v_p1, v_hoy + 50, v_hoy + 52,
+         2::smallint, 'Prueba Habilitada', '30111240', 'h@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('con las reservas prendidas se puede reservar',
+    (v->>'ok')::boolean = true, v::text);
+
+  v := public.habilitar_reservas(v_complejo, false);
+  PERFORM pg_temp.verificar('apagarlas no pregunta nada, porque es a propósito',
+    (v->>'habilitadas')::boolean = false
+    AND (v->>'pero_no_se_puede_reservar')::boolean = false, v::text);
+
+  v := public.crear_reserva('posada-de-precios', v_p1, v_hoy + 60, v_hoy + 62,
+         2::smallint, 'Prueba Apagada', '30111241', 'q@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('y entonces no se puede reservar de verdad',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'reservas_cerradas', v::text);
+
+  PERFORM public.habilitar_reservas(v_complejo, true);
+
+  -- ----------------------------------------------------------------
+  -- Las unidades
+  -- ----------------------------------------------------------------
+  v := public.guardar_unidad(v_complejo, 'p3', 'Pieza Tres', 3::smallint,
+         'máx 3, ideal 2 adultos y un chico');
+  PERFORM pg_temp.verificar('el dueño puede agregar una unidad',
+    (v->>'ok')::boolean = true AND (v->>'era_alta')::boolean = true, v::text);
+  PERFORM pg_temp.verificar('el código se guarda en mayúsculas',
+    v->>'codigo' = 'P3', v::text);
+  -- Sin orden explícito va al final: si todas quedaran en 0, el orden de la
+  -- página dependería del orden físico de las filas, que cambia solo.
+  PERFORM pg_temp.verificar('y sin orden explícito va al final',
+    (v->>'orden')::int = 3, v::text);
+  v_id := (v->>'id')::uuid;
+
+  v := public.guardar_unidad(v_complejo, 'P1', 'Repetida', 2::smallint);
+  PERFORM pg_temp.verificar('dos unidades con el mismo código no pueden coexistir',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'codigo_repetido', v::text);
+  PERFORM pg_temp.verificar('y el mensaje dice cuál es el código',
+    v->>'mensaje' LIKE '%P1%', v::text);
+
+  v := public.guardar_unidad(v_complejo, 'P4', 'Para cien', 100::smallint);
+  PERFORM pg_temp.verificar('una unidad para cien personas no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'capacidad_invalida', v::text);
+
+  v := public.guardar_unidad(v_complejo, '  ', 'Sin código', 2::smallint);
+  PERFORM pg_temp.verificar('ni una sin código',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'faltan_datos', v::text);
+
+  -- Editar.
+  v := public.guardar_unidad(v_complejo, 'P3', 'Pieza Tres Grande', 4::smallint,
+         NULL, NULL, true, v_id);
+  PERFORM pg_temp.verificar('editar una unidad le cambia nombre y capacidad',
+    (v->>'ok')::boolean = true AND (v->>'era_alta')::boolean = false
+    AND (SELECT nombre = 'Pieza Tres Grande' AND capacidad_maxima = 4
+           FROM unidades WHERE id = v_id), v::text);
+
+  -- Y la capacidad es un límite de verdad, no un cartel.
+  v := public.crear_reserva('posada-de-precios', v_id, v_hoy + 70, v_hoy + 72,
+         9::smallint, 'Prueba Capacidad', '30111242', 'c@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('y nadie puede reservar para más gente de la que entra',
+    (v->>'ok')::boolean = false, v::text);
+
+  -- ----------------------------------------------------------------
+  -- Sacar de circulación vs. borrar
+  -- ----------------------------------------------------------------
+  -- Una unidad sin precio: `salud_de_los_precios()` lo tiene que decir, porque
+  -- la acabamos de crear activa y sin precio en ningún período.
+  PERFORM pg_temp.verificar('una unidad nueva sin precio queda invendible, y se dice',
+    EXISTS (SELECT 1 FROM jsonb_array_elements(
+              public.salud_de_los_precios(v_complejo)->'unidades_sin_precio') AS e
+             WHERE e->>'codigo' = 'P3'));
+
+  v := public.guardar_unidad(v_complejo, 'P3', 'Pieza Tres Grande', 4::smallint,
+         NULL, NULL, false, v_id);
+  PERFORM pg_temp.verificar('sacarla de circulación la saca del aviso',
+    NOT EXISTS (SELECT 1 FROM jsonb_array_elements(
+                  public.salud_de_los_precios(v_complejo)->'unidades_sin_precio') AS e
+                 WHERE e->>'codigo' = 'P3'), v::text);
+  PERFORM pg_temp.verificar('y de la página pública',
+    NOT EXISTS (SELECT 1 FROM jsonb_array_elements(
+                  public.complejo_publico('posada-de-precios')->'unidades') AS e
+                 WHERE e->>'codigo' = 'P3'));
+
+  -- Borrar una sin reservas sí se puede.
+  v := public.borrar_unidad(v_id);
+  PERFORM pg_temp.verificar('una unidad sin reservas se puede borrar',
+    (v->>'ok')::boolean = true, v::text);
+
+  -- Una con reservas no, y lo dice en vez de tirar un error de Postgres. Eso
+  -- sería tirar el historial de la plata que entró.
+  v := public.borrar_unidad(v_p1);
+  PERFORM pg_temp.verificar('una con reservas no se borra, y dice por qué',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'tiene_reservas', v::text);
+  PERFORM pg_temp.verificar('y ofrece sacarla de circulación en vez',
+    v->>'mensaje' LIKE '%circulación%', v::text);
+  PERFORM pg_temp.verificar('y la unidad sigue ahí con sus reservas',
+    (SELECT count(*) = 1 FROM unidades WHERE id = v_p1));
+
+  v := public.borrar_unidad(gen_random_uuid());
+  PERFORM pg_temp.verificar('borrar algo que no está lo dice en vez de contestar «listo»',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'no_existe', v::text);
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+END $$;
+
+-- Y nada de esto lo puede tocar el vecino.
+DO $$
+DECLARE
+  v_ok    BOOLEAN;
+  v_ajena UUID := 'cccccccc-0000-0000-0000-000000000002';
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+
+  v_ok := false;
+  BEGIN
+    PERFORM public.guardar_datos_del_complejo('aaaaaaaa-0000-0000-0000-000000000003',
+      'Me lo robo', '5490000000000', 'CBU mío');
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('el vecino no puede cambiarle los datos a otro complejo', v_ok);
+
+  v_ok := false;
+  BEGIN
+    PERFORM public.habilitar_reservas('aaaaaaaa-0000-0000-0000-000000000003', false);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('ni apagarle las reservas', v_ok);
+
+  v_ok := false;
+  BEGIN
+    PERFORM public.borrar_unidad(v_ajena);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('ni borrarle una unidad', v_ok);
+
+  -- El agujero que tapa el `complejo_id` del WHERE: la unidad ajena mandada con
+  -- el id de un complejo propio. `es_miembro(propio)` da true, así que sin ese
+  -- WHERE la edición pasaría.
+  v_ok := false;
+  BEGIN
+    PERFORM public.guardar_unidad('aaaaaaaa-0000-0000-0000-000000000002',
+      'ROBADA', 'Robada', 2::smallint, NULL, NULL, true, v_ajena);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('y editar una unidad ajena desde su propio complejo no pasa',
+    v_ok OR (SELECT nombre <> 'Robada' FROM unidades WHERE id = v_ajena));
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+
+  PERFORM pg_temp.verificar('la unidad ajena quedó como estaba',
+    (SELECT nombre FROM unidades WHERE id = v_ajena) = 'Pieza Dos');
+  PERFORM pg_temp.verificar('y el complejo ajeno también',
+    (SELECT nombre FROM complejos WHERE id = 'aaaaaaaa-0000-0000-0000-000000000003')
+      = 'Posada de Precios');
+END $$;
+
+
+-- ============================================
+-- 19. El alta de un cliente, de una
+-- ============================================
+-- Lo que se prueba acá es sobre todo lo que NO queda cuando algo falla: el alta
+-- de un complejo son cuatro escrituras en cuatro tablas, y la razón de que sea
+-- una función es que o queda todo o no queda nada.
+DO $$
+DECLARE
+  v        JSONB;
+  v_id     UUID;
+  v_antes  INTEGER;
+  v_ok     BOOLEAN;
+BEGIN
+  SELECT count(*) INTO v_antes FROM complejos;
+
+  -- ----------------------------------------------------------------
+  -- Un alta completa
+  -- ----------------------------------------------------------------
+  v := public.crear_complejo(jsonb_build_object(
+    'slug', 'hosteria-de-prueba',
+    'nombre', 'Hostería de Prueba',
+    'localidad', 'Villa Ejemplo',
+    'duenio', '11111111-1111-1111-1111-111111111111',
+    'whatsapp', '+54 9 223 555-1111',
+    'datos_transferencia', 'Alias: hosteria.prueba',
+    'ultima_fecha', (current_date + 300)::text,
+    'minimo_noches', 2,
+    'unidades', jsonb_build_array(
+      jsonb_build_object('codigo', 'h1', 'nombre', 'Habitación Uno', 'capacidad_maxima', 2),
+      jsonb_build_object('codigo', 'h2', 'nombre', 'Habitación Dos', 'capacidad_maxima', 4,
+                         'sugerencia_ocupacion', 'ideal dos adultos y dos chicos')
+    )
+  ));
+  PERFORM pg_temp.verificar('se puede dar de alta un complejo entero de una',
+    (v->>'ok')::boolean = true AND (v->>'unidades')::int = 2, v::text);
+  v_id := (v->>'id')::uuid;
+
+  PERFORM pg_temp.verificar('con su dueño ya colgado',
+    (SELECT count(*) = 1 FROM complejo_miembros
+      WHERE complejo_id = v_id AND user_id = '11111111-1111-1111-1111-111111111111'));
+  PERFORM pg_temp.verificar('sus unidades en orden y en mayúsculas',
+    (SELECT array_agg(codigo ORDER BY orden) FROM unidades WHERE complejo_id = v_id)
+      = ARRAY['H1','H2']);
+  PERFORM pg_temp.verificar('y su ventana de reservas cargada',
+    (SELECT ultima_fecha = current_date + 300 AND minimo_noches = 2
+       FROM config_calendario WHERE complejo_id = v_id));
+  PERFORM pg_temp.verificar('el WhatsApp entró limpio, como en el panel',
+    (SELECT whatsapp FROM complejos WHERE id = v_id) = '5492235551111');
+
+  -- ----------------------------------------------------------------
+  -- Y no vende, y lo dice
+  -- ----------------------------------------------------------------
+  -- Un alta que contesta «listo» y deja un complejo que no vende nada es la
+  -- misma falla que este sistema persigue en todas las otras pantallas.
+  PERFORM pg_temp.verificar('las reservas quedan apagadas, porque no hay precios',
+    (SELECT NOT reservas_habilitadas FROM complejos WHERE id = v_id));
+  PERFORM pg_temp.verificar('y la respuesta dice que falta cargarlos',
+    (v->'falta'->>'precios')::boolean = true, v::text);
+  PERFORM pg_temp.verificar('y que dónde transferir ya está',
+    (v->'falta'->>'donde_transferir')::boolean = false, v::text);
+
+  -- La consecuencia de verdad: la página se abre y no deja reservar.
+  PERFORM pg_temp.verificar('la página existe',
+    (public.complejo_publico('hosteria-de-prueba')->>'slug') = 'hosteria-de-prueba');
+  v := public.crear_reserva('hosteria-de-prueba',
+         (SELECT id FROM unidades WHERE complejo_id = v_id ORDER BY orden LIMIT 1),
+         current_date + 10, current_date + 13, 2::smallint,
+         'Prueba Alta', '30111250', 'alta@ejemplo.test', '5490000000000');
+  PERFORM pg_temp.verificar('pero no se puede reservar: las reservas están apagadas',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'reservas_cerradas', v::text);
+
+  -- ----------------------------------------------------------------
+  -- El slug, que no se puede corregir después
+  -- ----------------------------------------------------------------
+  v := public.crear_complejo(jsonb_build_object(
+    'slug', 'hosteria-de-prueba', 'nombre', 'Otra',
+    'duenio', '11111111-1111-1111-1111-111111111111',
+    'ultima_fecha', (current_date + 300)::text,
+    'unidades', jsonb_build_array(
+      jsonb_build_object('codigo', 'X', 'nombre', 'X', 'capacidad_maxima', 2))
+  ));
+  PERFORM pg_temp.verificar('dos complejos con la misma dirección no pueden coexistir',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'slug_ocupado', v::text);
+
+  v := public.crear_complejo(jsonb_build_object(
+    'slug', 'Cabañas Del Sol', 'nombre', 'Con mayúsculas y espacios',
+    'duenio', '11111111-1111-1111-1111-111111111111',
+    'ultima_fecha', (current_date + 300)::text,
+    'unidades', jsonb_build_array(
+      jsonb_build_object('codigo', 'X', 'nombre', 'X', 'capacidad_maxima', 2))
+  ));
+  PERFORM pg_temp.verificar('una dirección con espacios y acentos no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'slug_invalido', v::text);
+  PERFORM pg_temp.verificar('y el mensaje muestra la forma que espera',
+    v->>'mensaje' LIKE '%cabanias-del-sol%', v::text);
+
+  -- ----------------------------------------------------------------
+  -- Lo que falta no crea nada a medias
+  -- ----------------------------------------------------------------
+  SELECT count(*) INTO v_antes FROM complejos;
+
+  v := public.crear_complejo(jsonb_build_object(
+    'slug', 'sin-unidades', 'nombre', 'Sin unidades',
+    'duenio', '11111111-1111-1111-1111-111111111111',
+    'ultima_fecha', (current_date + 300)::text,
+    'unidades', '[]'::jsonb
+  ));
+  PERFORM pg_temp.verificar('un complejo sin unidades no se crea',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'sin_unidades', v::text);
+
+  v := public.crear_complejo(jsonb_build_object(
+    'slug', 'sin-ventana', 'nombre', 'Sin ventana',
+    'duenio', '11111111-1111-1111-1111-111111111111',
+    'unidades', jsonb_build_array(
+      jsonb_build_object('codigo', 'X', 'nombre', 'X', 'capacidad_maxima', 2))
+  ));
+  PERFORM pg_temp.verificar('ni uno sin hasta cuándo se puede reservar',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'falta_ultima_fecha', v::text);
+
+  v := public.crear_complejo(jsonb_build_object(
+    'slug', 'sin-duenio', 'nombre', 'Sin dueño',
+    'duenio', gen_random_uuid(),
+    'ultima_fecha', (current_date + 300)::text,
+    'unidades', jsonb_build_array(
+      jsonb_build_object('codigo', 'X', 'nombre', 'X', 'capacidad_maxima', 2))
+  ));
+  PERFORM pg_temp.verificar('ni uno cuyo dueño no exista en Auth',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'duenio_inexistente', v::text);
+
+  v := public.crear_complejo(jsonb_build_object(
+    'slug', 'duenio-roto', 'nombre', 'Dueño roto',
+    'duenio', 'no-soy-un-uuid',
+    'ultima_fecha', (current_date + 300)::text,
+    'unidades', jsonb_build_array(
+      jsonb_build_object('codigo', 'X', 'nombre', 'X', 'capacidad_maxima', 2))
+  ));
+  PERFORM pg_temp.verificar('un id de dueño que no es un id tampoco revienta',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'falta_duenio', v::text);
+
+  PERFORM pg_temp.verificar('y ninguno de esos cuatro dejó un complejo a medias',
+    (SELECT count(*) FROM complejos) = v_antes);
+
+  -- ----------------------------------------------------------------
+  -- La transacción: una unidad mal escrita revierte el complejo entero
+  -- ----------------------------------------------------------------
+  -- Es la razón de que esto sea una función y no cuatro llamadas. Con cuatro
+  -- llamadas, acá quedaría un complejo con una unidad y sin calendario.
+  v_ok := false;
+  BEGIN
+    PERFORM public.crear_complejo(jsonb_build_object(
+      'slug', 'a-medias', 'nombre', 'A medias',
+      'duenio', '11111111-1111-1111-1111-111111111111',
+      'ultima_fecha', (current_date + 300)::text,
+      'unidades', jsonb_build_array(
+        jsonb_build_object('codigo', 'OK', 'nombre', 'Esta está bien', 'capacidad_maxima', 2),
+        jsonb_build_object('codigo', '', 'nombre', '', 'capacidad_maxima', 2))
+    ));
+  EXCEPTION WHEN check_violation THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('una unidad sin código corta el alta', v_ok);
+  PERFORM pg_temp.verificar('y el complejo no quedó creado',
+    NOT EXISTS (SELECT 1 FROM complejos WHERE slug = 'a-medias'));
+  PERFORM pg_temp.verificar('ni su unidad buena',
+    NOT EXISTS (SELECT 1 FROM unidades WHERE codigo = 'OK'));
+
+  -- Y una capacidad imposible la frena el CHECK de la tabla, revirtiendo igual.
+  v_ok := false;
+  BEGIN
+    PERFORM public.crear_complejo(jsonb_build_object(
+      'slug', 'capacidad-rota', 'nombre', 'Capacidad rota',
+      'duenio', '11111111-1111-1111-1111-111111111111',
+      'ultima_fecha', (current_date + 300)::text,
+      'unidades', jsonb_build_array(
+        jsonb_build_object('codigo', 'Z', 'nombre', 'Z', 'capacidad_maxima', 0))
+    ));
+  EXCEPTION WHEN check_violation THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('una capacidad en cero también corta el alta', v_ok);
+  PERFORM pg_temp.verificar('y tampoco deja nada',
+    NOT EXISTS (SELECT 1 FROM complejos WHERE slug = 'capacidad-rota'));
+END $$;
+
+-- Y el complejo recién creado es tan ajeno como cualquier otro.
+DO $$
+DECLARE
+  v_id    UUID;
+  v_vistos INTEGER;
+BEGIN
+  v_id := (SELECT id FROM complejos WHERE slug = 'hosteria-de-prueba');
+
+  PERFORM set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+
+  -- `SET LOCAL ROLE authenticated` y no sólo el claim del JWT: esta prueba corre
+  -- como superusuario, y a un superusuario RLS no se le aplica. Sin el cambio de
+  -- rol, la aserción daba 1 y yo iba a creer que el aislamiento estaba roto. Es
+  -- el mismo patrón del bloque 10.
+  SET LOCAL ROLE authenticated;
+  SELECT count(*) INTO v_vistos FROM complejos WHERE id = v_id;
+  RESET ROLE;
+
+  PERFORM pg_temp.verificar('el vecino no ve el complejo recén dado de alta',
+    v_vistos = 0, format('vio %s', v_vistos));
+
+  -- Y la función de alta no la puede llamar: no está concedida a su rol. Eso se
+  -- comprueba por el permiso, no intentándolo, porque en esta prueba el rol de
+  -- la sesión es el superusuario y podría todo.
+  PERFORM pg_temp.verificar('y crear_complejo() no está concedida a los dueños',
+    NOT has_function_privilege('authenticated', 'public.crear_complejo(jsonb)', 'EXECUTE'));
+  PERFORM pg_temp.verificar('ni a los visitantes',
+    NOT has_function_privilege('anon', 'public.crear_complejo(jsonb)', 'EXECUTE'));
+  PERFORM pg_temp.verificar('y sí al servidor, que es el que da las altas',
+    has_function_privilege('service_role', 'public.crear_complejo(jsonb)', 'EXECUTE'));
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+END $$;
+
+
+-- ============================================
+-- 20. La marca del complejo
+-- ============================================
+-- Estos seis valores no son datos que se muestran: son CSS que se ejecuta.
+-- Terminan en el `style` del contenedor de la página del huésped.
+DO $$
+DECLARE
+  v          JSONB;
+  v_complejo UUID := 'aaaaaaaa-0000-0000-0000-000000000001';
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+
+  -- ----------------------------------------------------------------
+  -- La cuenta del contraste, contra valores que se pueden verificar a mano
+  -- ----------------------------------------------------------------
+  -- Negro sobre blanco es 21:1, el máximo posible, y cualquier color contra sí
+  -- mismo es 1:1. Si la fórmula estuviera mal, estos dos no darían.
+  PERFORM pg_temp.verificar('negro sobre blanco da el contraste máximo, 21',
+    public.contraste_wcag('#000000', '#ffffff') = 21.00,
+    public.contraste_wcag('#000000', '#ffffff')::text);
+  PERFORM pg_temp.verificar('y un color contra sí mismo da 1',
+    public.contraste_wcag('#7f7f7f', '#7f7f7f') = 1.00,
+    public.contraste_wcag('#7f7f7f', '#7f7f7f')::text);
+  PERFORM pg_temp.verificar('y da lo mismo en cualquier orden',
+    public.contraste_wcag('#1f2937', '#f8f7f4')
+      = public.contraste_wcag('#f8f7f4', '#1f2937'));
+  -- Los colores por omisión del producto: tienen que pasar el 4.5 de WCAG.
+  PERFORM pg_temp.verificar('los colores por omisión de AlojaOS son legibles',
+    public.contraste_wcag('#111827', '#f8f7f4') >= 4.5,
+    public.contraste_wcag('#111827', '#f8f7f4')::text);
+  PERFORM pg_temp.verificar('un hexadecimal roto devuelve nulo, no un número inventado',
+    public.contraste_wcag('rojo', '#ffffff') IS NULL);
+
+  -- ----------------------------------------------------------------
+  -- Guardar la marca
+  -- ----------------------------------------------------------------
+  v := public.guardar_marca(v_complejo, '#2F4F3A', '#FAF8F2', '#1A1A1A', '#C2681E',
+         'serif', 'sistema');
+  PERFORM pg_temp.verificar('el dueño puede cambiar los colores de su página',
+    (v->>'ok')::boolean = true, v::text);
+  PERFORM pg_temp.verificar('se guardan en minúsculas, una sola forma',
+    (SELECT color_principal = '#2f4f3a' AND color_acento = '#c2681e'
+       FROM complejos WHERE id = v_complejo), v::text);
+  -- La tipografía se guarda como PILA de CSS, pero entra como clave. Es la
+  -- diferencia entre un campo cerrado y un campo que acepta CSS arbitrario.
+  PERFORM pg_temp.verificar('la tipografía se guarda como pila de CSS, no como la clave',
+    (SELECT tipografia_titulos LIKE 'ui-serif%' FROM complejos WHERE id = v_complejo));
+
+  -- Y la consecuencia: la página pública sirve los colores nuevos.
+  PERFORM pg_temp.verificar('y la página del huésped los usa',
+    (public.complejo_publico('cabanias-del-sol')->'marca'->>'color_principal') = '#2f4f3a');
+
+  -- ----------------------------------------------------------------
+  -- El aviso de contraste, que no rechaza nada
+  -- ----------------------------------------------------------------
+  -- Un dueño puede querer contraste bajo y es su página. Lo que no puede pasar
+  -- es que lo elija sin que nadie se lo diga: se ve bien en el monitor donde se
+  -- eligió y no se lee en un celular al sol, y el que no pudo leerla no avisa.
+  v := public.guardar_marca(v_complejo, '#eeeeee', '#ffffff', '#f0f0f0', '#fafafa');
+  PERFORM pg_temp.verificar('gris clarito sobre blanco se guarda igual, porque es su página',
+    (v->>'ok')::boolean = true, v::text);
+  PERFORM pg_temp.verificar('pero el contraste que devuelve lo delata',
+    (v->>'contraste')::numeric < 4.5, v::text);
+
+  -- ----------------------------------------------------------------
+  -- Lo que no es un color
+  -- ----------------------------------------------------------------
+  -- El motivo real: un `url(...)` acá haría que el navegador de cada huésped
+  -- pida ese recurso a un tercero.
+  v := public.guardar_marca(v_complejo, 'url(https://ejemplo.test/x.png)',
+         '#ffffff', '#000000', '#ff0000');
+  PERFORM pg_temp.verificar('un url() no es un color y no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'color_invalido', v::text);
+  PERFORM pg_temp.verificar('y el mensaje dice cuál de los cuatro está mal',
+    v->>'mensaje' LIKE '%principal%', v::text);
+
+  v := public.guardar_marca(v_complejo, 'red', '#ffffff', '#000000', '#ff0000');
+  PERFORM pg_temp.verificar('un nombre de color de CSS tampoco',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'color_invalido', v::text);
+
+  v := public.guardar_marca(v_complejo, '', '#ffffff', '#000000', '#ff0000');
+  PERFORM pg_temp.verificar('ni uno vacío, y lo dice así',
+    (v->>'ok')::boolean = false AND v->>'mensaje' LIKE '%(vacío)%', v::text);
+
+  -- `#abc` sí: es CSS válido y abrevia `#aabbcc`. Se normaliza.
+  v := public.guardar_marca(v_complejo, '#abc', '#fff', '#000', '#f00');
+  PERFORM pg_temp.verificar('el hexadecimal corto se acepta y se normaliza a seis',
+    (v->>'ok')::boolean = true
+    AND (SELECT color_principal = '#aabbcc' AND color_fondo = '#ffffff'
+           FROM complejos WHERE id = v_complejo), v::text);
+
+  -- ----------------------------------------------------------------
+  -- Las tipografías son una lista cerrada
+  -- ----------------------------------------------------------------
+  PERFORM pg_temp.verificar('hay seis tipografías para elegir',
+    (SELECT count(*) = 6 FROM public.tipografias_disponibles()));
+  -- Ninguna carga una fuente de un tercero: eso le contaría a ese tercero quién
+  -- visitó la página del complejo, y mueve el texto cuando termina de cargar.
+  PERFORM pg_temp.verificar('y ninguna pide una fuente a un tercero',
+    NOT EXISTS (SELECT 1 FROM public.tipografias_disponibles()
+                 WHERE pila ILIKE '%url%' OR pila ILIKE '%http%'
+                    OR pila ILIKE '%@import%'));
+
+  -- Se deja una tipografía válida puesta ANTES de intentar la mala, así la
+  -- aserción de abajo compara contra algo. La primera versión comparaba contra
+  -- una columna que estaba en NULL y daba NULL, o sea no comprobaba nada —y el
+  -- arnés la contaba como fallada sin hacer fallar la corrida—. De ahí salió el
+  -- arreglo del encabezado de este archivo.
+  PERFORM public.guardar_marca(v_complejo, '#000000', '#ffffff', '#000000', '#ff0000',
+            'estrecha', 'estrecha');
+
+  v := public.guardar_marca(v_complejo, '#000000', '#ffffff', '#000000', '#ff0000',
+         'Arial; } body { display: none');
+  PERFORM pg_temp.verificar('una tipografía que no está en la lista no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'tipografia_invalida', v::text);
+  PERFORM pg_temp.verificar('y la que había sigue en pie, sin una letra del CSS colado',
+    (SELECT tipografia_titulos LIKE 'Oswald%' AND tipografia_titulos NOT LIKE '%display%'
+       FROM complejos WHERE id = v_complejo),
+    (SELECT coalesce(tipografia_titulos, '(nula)') FROM complejos WHERE id = v_complejo));
+
+  -- Sin tipografía elegida vuelve a la del sistema, que es NULL en la columna:
+  -- la página cae en la variable CSS por omisión.
+  v := public.guardar_marca(v_complejo, '#1f2937', '#f8f7f4', '#111827', '#b45309');
+  PERFORM pg_temp.verificar('no elegir tipografía la deja nula, y la página usa la de siempre',
+    (v->>'ok')::boolean = true
+    AND (SELECT tipografia_titulos IS NULL AND tipografia_cuerpo IS NULL
+           FROM complejos WHERE id = v_complejo), v::text);
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+END $$;
+
+-- Y la marca del vecino no se toca.
+DO $$
+DECLARE v_ok BOOLEAN := false;
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+  BEGIN
+    PERFORM public.guardar_marca('aaaaaaaa-0000-0000-0000-000000000001',
+      '#ff0000', '#ff0000', '#ff0000', '#ff0000');
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('el vecino no puede cambiarle la marca a otro complejo', v_ok);
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+
+  PERFORM pg_temp.verificar('y la marca ajena quedó como estaba',
+    (SELECT color_principal FROM complejos
+      WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001') = '#1f2937');
+END $$;
+
+-- ============================================
 -- Resultado
 -- ============================================
 \echo ''
 -- lpad RECORTA cuando el texto es más largo que el ancho: con 2, la prueba
 -- 103 se imprimía como «10», igual que la 104 y la 105. Un número de prueba
 -- repetido manda a buscar la prueba equivocada.
-SELECT lpad(n::text, 3) || '  ' || CASE WHEN paso THEN 'OK    ' ELSE 'FALLA ' END || nombre ||
-       CASE WHEN paso OR detalle = '' THEN '' ELSE E'\n        → ' || detalle END AS "prueba de la base"
+-- `NULA` y no `FALLA` cuando la expresión no se evaluó: son dos problemas
+-- distintos. Una que falla dice que el sistema hace algo que no debería; una
+-- nula dice que la prueba está mal escrita y no comprobó nada.
+SELECT lpad(n::text, 3) || '  ' ||
+       CASE WHEN indeterminada THEN 'NULA  ' WHEN paso THEN 'OK    ' ELSE 'FALLA ' END ||
+       nombre ||
+       CASE WHEN indeterminada
+              THEN E'\n        → la expresión dio NULL: no comprobó nada. Suele ser una comparación contra una columna nula.'
+                   || CASE WHEN coalesce(detalle, '') = '' THEN '' ELSE E'\n        → ' || detalle END
+            WHEN paso OR coalesce(detalle, '') = '' THEN ''
+            ELSE E'\n        → ' || detalle
+       END AS "prueba de la base"
   FROM resultado ORDER BY n;
 
 \echo ''
-SELECT count(*) FILTER (WHERE paso) || ' de ' || count(*) || ' pasaron' AS resumen FROM resultado;
+SELECT count(*) FILTER (WHERE paso) || ' de ' || count(*) || ' pasaron'
+       || CASE WHEN count(*) FILTER (WHERE indeterminada) > 0
+               THEN ' · ' || count(*) FILTER (WHERE indeterminada) || ' no comprobaron nada (NULA)'
+               ELSE '' END AS resumen
+  FROM resultado;
 
+-- `paso` ya es NOT NULL, así que este `WHERE NOT paso` no puede volver a
+-- dejar pasar una fila en silencio. Antes sí podía, y lo hizo.
 DO $$
-DECLARE v_fallas INTEGER;
+DECLARE
+  v_fallas INTEGER;
+  v_nulas  INTEGER;
 BEGIN
-  SELECT count(*) INTO v_fallas FROM resultado WHERE NOT paso;
+  SELECT count(*) FILTER (WHERE NOT paso), count(*) FILTER (WHERE indeterminada)
+    INTO v_fallas, v_nulas
+    FROM resultado;
+
+  IF v_nulas > 0 THEN
+    RAISE EXCEPTION '% pruebas fallaron, y % de ésas no comprobaron nada (su expresión dio NULL)',
+      v_fallas, v_nulas;
+  END IF;
   IF v_fallas > 0 THEN
     RAISE EXCEPTION '% pruebas fallaron', v_fallas;
   END IF;

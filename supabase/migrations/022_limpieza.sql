@@ -1,0 +1,39 @@
+-- ============================================
+-- Sacar dos funciones que sobraban
+-- ============================================
+-- Las dos estaban en `supabase/a_mano/` esperando una herramienta que pudiera
+-- correr un `DROP`. Ahora la hay: `npm run db:migrate` aplica por la Management
+-- API, que no pasa por el conector que se cortaba.
+--
+-- Así que esto deja de ser un pendiente que alguien tiene que recordar y pasa a
+-- ser una migración: queda en el historial, el registro de `sistema.migraciones`
+-- la anota, y el arnés local la corre como cualquier otra.
+--
+-- ------------------------------------------------------------------
+-- 1. `reservas_pendientes_sin_comprobante`
+-- ------------------------------------------------------------------
+-- La 011 le agregó dos columnas de salida a `reservas_pendientes()`. Postgres no
+-- deja cambiarle el tipo de retorno a una función existente, y la herramienta
+-- con la que aplicaba entonces no podía correr un `DROP`, así que la vieja se
+-- corrió a un costado con `ALTER FUNCTION ... RENAME TO` y el nombre quedó libre
+-- para la nueva.
+--
+-- No molestaba a nadie —tenía el EXECUTE revocado de todos los roles de la API,
+-- así que PostgREST la publicaba y contestaba 403— pero era una función que no
+-- describe ningún archivo del repo.
+--
+-- ------------------------------------------------------------------
+-- 2. `zz_borrar_a_mano_sobra_de_una_prueba`
+-- ------------------------------------------------------------------
+-- Esta la creé yo en producción, averiguando qué sentencias cortaba el conector.
+-- Quedó porque el `DROP` tampoco entraba. Le revoqué el EXECUTE de todos los
+-- roles y la renombré para que se viera que era basura, pero seguía ahí.
+--
+-- Y hacía fallar dos filas del verificador, que es justamente lo que el
+-- verificador existe para hacer: la fila 98 la busca por nombre, y la 81 —que
+-- exige `search_path` fijo en todas las funciones de `public`— la pescaba porque
+-- la escribí a las apuradas sin fijarlo. Las dos filas estuvieron en rojo hasta
+-- este archivo, y eso es correcto: producción no era el repo.
+
+DROP FUNCTION IF EXISTS public.reservas_pendientes_sin_comprobante(UUID);
+DROP FUNCTION IF EXISTS public.zz_borrar_a_mano_sobra_de_una_prueba();

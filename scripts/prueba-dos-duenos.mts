@@ -115,6 +115,108 @@ async function comoUsuario(tok: string, path: string, init?: RequestInit) {
   return { status: res.status, cuerpo };
 }
 
+/**
+ * El huésped de la seña que esta batería crea y borra.
+ *
+ * Es el mismo nombre que siembra `ejemplo-vecino.sql`, a propósito: las
+ * aserciones de filtración buscan exactamente estos datos, y tienen que seguir
+ * buscando algo que esté en la base ahora.
+ */
+const PRIVADO = {
+  nombre: 'Huesped Del Vecino',
+  telefono: '5491199998888',
+  email: 'secreto@ejemplo.test',
+  dni: '40111222',
+};
+
+/** El complejo y la unidad del vecino, fijos en `ejemplo-vecino.sql`. */
+const VECINO_SLUG = 'posada-vecina';
+const VECINO_UNIDAD = '0d0d0d0d-0000-0000-0000-00000000000d';
+
+/**
+ * Las fechas de la seña de prueba.
+ *
+ * Adentro de la ventana del vecino (hasta 2027-04-30) y lejos de las de la
+ * seña sembrada, para no chocar con la restricción de exclusión.
+ */
+const DESDE = process.env.ALOJAOS_VECINO_DESDE ?? '2027-03-08';
+const HASTA = process.env.ALOJAOS_VECINO_HASTA ?? '2027-03-12';
+
+async function escribirConServicio(path: string, init: RequestInit) {
+  const res = await fetch(`${URL_BASE}/rest/v1/${path}`, {
+    ...init,
+    headers: {
+      apikey: SERVICIO,
+      Authorization: `Bearer ${SERVICIO}`,
+      'Content-Type': 'application/json',
+      ...(init.headers ?? {}),
+    },
+  });
+  if (!res.ok) throw new Error(`la base contestó HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return res;
+}
+
+/**
+ * Borra las señas que dejó una corrida anterior de esta batería.
+ *
+ * Por fechas y no por nombre: el nombre lo comparte con la seña sembrada, que
+ * no se toca —sigue sirviendo como material de filtración—.
+ */
+async function limpiar(): Promise<number> {
+  const res = await escribirConServicio(
+    `reservas?check_in=eq.${DESDE}&unidad_id=eq.${VECINO_UNIDAD}`,
+    { method: 'DELETE', headers: { Prefer: 'return=representation' } }
+  );
+  return ((await res.json()) as unknown[]).length;
+}
+
+/**
+ * Una seña fresca del vecino, creada por el camino público.
+ *
+ * ------------------------------------------------------------------
+ * Por qué la batería la crea y no usa la sembrada
+ * ------------------------------------------------------------------
+ * Usaba la de `ejemplo-vecino.sql`, que se siembra como HOLD_TRANSFER con
+ * `vence_el = now() + 20 horas`. El reloj de vencimientos —que anda, y que es
+ * una de las cosas que este producto arregló del sistema anterior— la vence al
+ * día siguiente. Así que dos aserciones de esta batería fallaban por una razón
+ * correcta: la seña ya no estaba en HOLD_TRANSFER.
+ *
+ * O sea que la batería del aislamiento, que es la que no puede fallar, servía
+ * sólo el día de la siembra. Ahora crea la suya, por `crear_reserva()` —el
+ * mismo camino que un huésped— y la borra al final.
+ */
+async function senaDelVecino(): Promise<{ id: string }> {
+  const res = await fetch(`${URL_BASE}/rest/v1/rpc/crear_reserva`, {
+    method: 'POST',
+    headers: { apikey: PUBLICA, Authorization: `Bearer ${PUBLICA}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      p_slug: VECINO_SLUG,
+      p_unidad: VECINO_UNIDAD,
+      p_check_in: DESDE,
+      p_check_out: HASTA,
+      p_personas: 3,
+      p_nombre: PRIVADO.nombre,
+      p_dni: PRIVADO.dni,
+      p_email: PRIVADO.email,
+      p_telefono: PRIVADO.telefono,
+    }),
+  });
+
+  const cuerpo = (await res.json()) as { ok?: boolean; motivo?: string; mensaje?: string; reserva?: string; id?: string };
+  if (!res.ok || cuerpo.ok !== true) {
+    throw new Error(
+      `no pude crear la seña del vecino: ${JSON.stringify(cuerpo).slice(0, 300)}\n` +
+        `  Si dice noche_sin_precio, a posada-vecina le faltan precios: corré scripts/ejemplo-vecino.sql.\n` +
+        `  Si dice ocupada, cambiá ALOJAOS_VECINO_DESDE y ALOJAOS_VECINO_HASTA.`
+    );
+  }
+
+  const id = cuerpo.reserva ?? cuerpo.id;
+  if (!id) throw new Error(`crear_reserva() no devolvió un id: ${JSON.stringify(cuerpo).slice(0, 200)}`);
+  return { id };
+}
+
 async function conServicio<T>(path: string): Promise<T> {
   const res = await fetch(`${URL_BASE}/rest/v1/${path}`, {
     headers: { apikey: SERVICIO, Authorization: `Bearer ${SERVICIO}` },
@@ -164,16 +266,20 @@ async function main() {
   const [complejoDuenio] = await conServicio<Array<{ id: string }>>(
     'complejos?slug=eq.cabanias-del-sol&select=id'
   );
-  const [reservaVecino] = await conServicio<Array<{ id: string; huesped_nombre: string }>>(
-    `reservas?complejo_id=eq.${complejoVecino.id}&huesped_nombre=eq.Huesped%20Del%20Vecino&select=id,huesped_nombre`
-  );
-
-  if (!complejoVecino || !complejoDuenio || !reservaVecino) {
+  if (!complejoVecino || !complejoDuenio) {
     console.error(
       '\n✗ Falta la siembra. Corré scripts/sembrar-demo.mts, ejemplo.sql y ejemplo-vecino.sql.\n'
     );
     process.exit(1);
   }
+
+  // La seña que se va a atacar la crea esta batería, por el camino público, y la
+  // borra al final. Ver `senaDelVecino()`: antes usaba la sembrada, que el
+  // reloj de vencimientos vence a las veinte horas, así que esta batería —la
+  // del aislamiento, la que no puede fallar— servía sólo el día de la siembra.
+  console.log(`→ limpiando: borré ${await limpiar()} seña(s) de una corrida anterior`);
+  const reservaVecino = await senaDelVecino();
+  console.log(`→ creé una seña del vecino para atacar: ${reservaVecino.id}\n`);
 
   // Los datos de una persona de carne y hueso del otro complejo. Son los que
   // ninguna respuesta puede contener.
@@ -338,10 +444,15 @@ async function main() {
     void cuerpo;
   }
 
+  // La seña de prueba se borra siempre, pase o falle: una batería que deja
+  // basura es una batería que no se puede volver a correr.
+  const borradas = await limpiar();
+  console.log(`\n→ limpié: borré ${borradas} seña(s) de prueba`);
+
   console.log(
     fallas === 0
-      ? '\n✓ Cada dueño ve lo suyo y nada más.\n'
-      : `\n✗ ${fallas} ${fallas === 1 ? 'filtración' : 'filtraciones'}.\n`
+      ? '✓ Cada dueño ve lo suyo y nada más.\n'
+      : `✗ ${fallas} ${fallas === 1 ? 'filtración' : 'filtraciones'}.\n`
   );
   process.exit(fallas === 0 ? 0 : 1);
 }

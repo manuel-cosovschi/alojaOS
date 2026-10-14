@@ -222,6 +222,23 @@ WITH esperado(orden, que, existe) AS (
         AND has_function_privilege('authenticated', 'public.avisos_que_no_salieron(uuid)', 'EXECUTE')
         AND NOT has_function_privilege('anon', 'public.avisos_que_no_salieron(uuid)', 'EXECUTE')),
 
+  -- --- Cerrar y reabrir fechas (015) --------------------------------------
+  (87, 'bloquear() existe y es sólo del dueño logueado',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='bloquear' AND pronamespace='public'::regnamespace)
+        AND has_function_privilege('authenticated', 'public.bloquear(uuid,uuid,date,date,text)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.bloquear(uuid,uuid,date,date,text)', 'EXECUTE')),
+  (88, 'reabrir() existe y es sólo del dueño logueado',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='reabrir' AND pronamespace='public'::regnamespace)
+        AND has_function_privilege('authenticated', 'public.reabrir(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.reabrir(uuid)', 'EXECUTE')),
+  (89, 'bloqueos_del_complejo() existe y es sólo del dueño logueado',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='bloqueos_del_complejo' AND pronamespace='public'::regnamespace)
+        AND has_function_privilege('authenticated', 'public.bloqueos_del_complejo(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.bloqueos_del_complejo(uuid)', 'EXECUTE')),
+
   -- --- El reloj del vencimiento -------------------------------------------
   -- La 013 programa un job de pg_cron para que una seña venza sin que nadie
   -- entre a la página. Estas tres filas se escriben condicionadas a que pg_cron
@@ -245,8 +262,195 @@ WITH esperado(orden, que, existe) AS (
   (86, 'ninguna seña vencida sigue ocupando noches',
        ((public.salud_del_vencimiento()->>'atrasadas')::integer = 0)),
 
+  -- --- 016: los precios desde el panel -----------------------------------
+  -- Las cuatro de la 016. Van con los permisos en la misma fila porque una
+  -- función que existe y no está concedida es igual de inútil que una que no
+  -- existe, y una concedida a `anon` es peor que las dos.
+  (93, 'periodos_del_complejo() existe y sólo la ve el dueño',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='periodos_del_complejo' AND pronamespace='public'::regnamespace)
+        AND has_function_privilege('authenticated', 'public.periodos_del_complejo(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.periodos_del_complejo(uuid)', 'EXECUTE')),
+  (94, 'guardar_periodo() existe y sólo la ve el dueño',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='guardar_periodo' AND pronamespace='public'::regnamespace)
+        AND has_function_privilege('authenticated',
+              'public.guardar_periodo(uuid,date,date,jsonb,text,uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon',
+              'public.guardar_periodo(uuid,date,date,jsonb,text,uuid)', 'EXECUTE')),
+  (95, 'borrar_periodo() existe y sólo la ve el dueño',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='borrar_periodo' AND pronamespace='public'::regnamespace)
+        AND has_function_privilege('authenticated', 'public.borrar_periodo(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.borrar_periodo(uuid)', 'EXECUTE')),
+  (96, 'salud_de_los_precios() existe y sólo la ve el dueño',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='salud_de_los_precios' AND pronamespace='public'::regnamespace)
+        AND has_function_privilege('authenticated', 'public.salud_de_los_precios(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.salud_de_los_precios(uuid)', 'EXECUTE')),
+
+  -- Las cuatro son SECURITY DEFINER, así que saltean RLS: el aislamiento entre
+  -- complejos lo sostiene el `es_miembro()` de adentro, no una policy. Si
+  -- alguna perdiera el `search_path` fijo, un esquema plantado por el llamador
+  -- podría cambiar a qué tabla apuntan.
+  (97, 'y las cuatro tienen search_path fijo',
+       (SELECT count(*) = 4 FROM pg_proc
+         WHERE pronamespace='public'::regnamespace
+           AND proname IN ('periodos_del_complejo','guardar_periodo',
+                           'borrar_periodo','salud_de_los_precios')
+           AND 'search_path=public' = ANY (coalesce(proconfig, ARRAY[]::text[])))),
+
+  -- Nada que se llame `zz_borrar_a_mano_*`: eso es sobra de una prueba mía
+  -- contra producción, no código del repo. Está en supabase/a_mano/.
+  (98, 'no quedan funciones de prueba sueltas en public',
+       (SELECT count(*) = 0 FROM pg_proc
+         WHERE pronamespace='public'::regnamespace
+           AND proname LIKE 'zz_borrar_a_mano%')),
+
+  -- --- 017: las reglas del calendario desde el panel ----------------------
+  -- Las seis de la 017, con sus permisos en la misma fila: una función que
+  -- existe y no está concedida es igual de inútil que una que no existe.
+  (100, 'las seis funciones de la 017 existen',
+       (SELECT count(DISTINCT proname) = 6 FROM pg_proc
+         WHERE pronamespace='public'::regnamespace
+           AND proname IN ('guardar_config_calendario','guardar_minimo','borrar_minimo',
+                           'guardar_bloque_fijo','borrar_bloque_fijo','reglas_del_calendario'))),
+  (101, 'y las seis las puede llamar el dueño',
+       has_function_privilege('authenticated',
+         'public.guardar_config_calendario(uuid,date,smallint,date)', 'EXECUTE')
+        AND has_function_privilege('authenticated',
+         'public.guardar_minimo(uuid,date,date,smallint,smallint[],text,uuid)', 'EXECUTE')
+        AND has_function_privilege('authenticated', 'public.borrar_minimo(uuid)', 'EXECUTE')
+        AND has_function_privilege('authenticated',
+         'public.guardar_bloque_fijo(uuid,date,date,text,uuid)', 'EXECUTE')
+        AND has_function_privilege('authenticated', 'public.borrar_bloque_fijo(uuid)', 'EXECUTE')
+        AND has_function_privilege('authenticated', 'public.reglas_del_calendario(uuid)', 'EXECUTE')),
+  -- Y ninguna para el huésped: estas escriben las reglas del negocio.
+  (102, 'y ninguna la puede llamar un visitante',
+       NOT has_function_privilege('anon',
+         'public.guardar_config_calendario(uuid,date,smallint,date)', 'EXECUTE')
+        AND NOT has_function_privilege('anon',
+         'public.guardar_minimo(uuid,date,date,smallint,smallint[],text,uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.borrar_minimo(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon',
+         'public.guardar_bloque_fijo(uuid,date,date,text,uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.borrar_bloque_fijo(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.reglas_del_calendario(uuid)', 'EXECUTE')),
+  (103, 'y las seis tienen search_path fijo',
+       (SELECT count(*) = 6 FROM pg_proc
+         WHERE pronamespace='public'::regnamespace
+           AND proname IN ('guardar_config_calendario','guardar_minimo','borrar_minimo',
+                           'guardar_bloque_fijo','borrar_bloque_fijo','reglas_del_calendario')
+           AND 'search_path=public' = ANY (coalesce(proconfig, ARRAY[]::text[])))),
+
+  -- Las restricciones contra el solape que estas funciones dejan decidir. Si
+  -- alguna faltara, dos reglas contradictorias sobre la misma noche entrarían
+  -- las dos y la página no tendría forma de elegir cuál aplicar.
+  (104, 'minimos_sin_solape y bloques_sin_solape siguen en pie',
+       (SELECT count(*) = 2 FROM pg_constraint
+         WHERE conname IN ('minimos_sin_solape','bloques_sin_solape') AND contype='x')),
+  (105, 'y periodos_sin_solape también',
+       (SELECT count(*) = 1 FROM pg_constraint
+         WHERE conname='periodos_sin_solape' AND contype='x')),
+
+  -- --- 018: los datos del complejo y sus unidades -------------------------
+  (110, 'las cuatro funciones de la 018 existen',
+       (SELECT count(DISTINCT proname) = 4 FROM pg_proc
+         WHERE pronamespace='public'::regnamespace
+           AND proname IN ('guardar_datos_del_complejo','habilitar_reservas',
+                           'guardar_unidad','borrar_unidad'))),
+  (111, 'y las cuatro las puede llamar el dueño y no un visitante',
+       has_function_privilege('authenticated',
+         'public.guardar_datos_del_complejo(uuid,text,text,text,text,text,numeric,smallint)', 'EXECUTE')
+        AND has_function_privilege('authenticated', 'public.habilitar_reservas(uuid,boolean)', 'EXECUTE')
+        AND has_function_privilege('authenticated',
+         'public.guardar_unidad(uuid,text,text,smallint,text,smallint,boolean,uuid)', 'EXECUTE')
+        AND has_function_privilege('authenticated', 'public.borrar_unidad(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon',
+         'public.guardar_datos_del_complejo(uuid,text,text,text,text,text,numeric,smallint)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.habilitar_reservas(uuid,boolean)', 'EXECUTE')
+        AND NOT has_function_privilege('anon',
+         'public.guardar_unidad(uuid,text,text,smallint,text,smallint,boolean,uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.borrar_unidad(uuid)', 'EXECUTE')),
+  (112, 'y las cuatro tienen search_path fijo',
+       (SELECT count(*) = 4 FROM pg_proc
+         WHERE pronamespace='public'::regnamespace
+           AND proname IN ('guardar_datos_del_complejo','habilitar_reservas',
+                           'guardar_unidad','borrar_unidad')
+           AND 'search_path=public' = ANY (coalesce(proconfig, ARRAY[]::text[])))),
+
+  -- Las dos reglas que hacen que `guardar_unidad()` y `borrar_unidad()` puedan
+  -- dejar que la base decida en vez de mirar antes de escribir.
+  (113, 'el slug sigue siendo inmutable',
+       (SELECT count(*) = 1 FROM pg_trigger
+         WHERE tgname='complejos_slug_inmutable' AND NOT tgisinternal)),
+  (114, 'una unidad con reservas no se puede borrar (ON DELETE RESTRICT)',
+       (SELECT count(*) = 1 FROM pg_constraint
+         WHERE conrelid='public.reservas'::regclass
+           AND confrelid='public.unidades'::regclass
+           AND contype='f' AND confdeltype='r')),
+  (115, 'y el código de unidad no se repite dentro de un complejo',
+       (SELECT count(*) >= 1 FROM pg_constraint
+         WHERE conrelid='public.unidades'::regclass AND contype='u'
+           AND pg_get_constraintdef(oid) ILIKE '%complejo_id%codigo%')),
+
+  -- --- 019: el registro de migraciones ------------------------------------
+  -- Sin esto, `npm run db:migrate` vuelve a correr todas las migraciones desde
+  -- la 001 y muere en la 002 contra un proyecto que ya las tiene.
+  (120, 'el registro de migraciones existe',
+       (SELECT count(*) = 1 FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'sistema' AND c.relname = 'migraciones')),
+  -- Va en su propio esquema justamente para que la API no lo vea. Los permisos
+  -- no se dejan a que eso siga siendo cierto.
+  (121, 'y la API no lo puede ni mirar',
+       NOT has_schema_privilege('anon', 'sistema', 'USAGE')
+        AND NOT has_schema_privilege('authenticated', 'sistema', 'USAGE')),
+
+  -- --- 020: el alta de un cliente -----------------------------------------
+  (130, 'crear_complejo() existe',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='crear_complejo' AND pronamespace='public'::regnamespace)),
+  -- Es la única función del esquema que crea complejos, así que es la única que
+  -- NO puede estar al alcance de un dueño: un rol que crea complejos es un rol
+  -- que puede escribir en el de cualquiera.
+  (131, 'y sólo la puede llamar el servidor',
+       has_function_privilege('service_role', 'public.crear_complejo(jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('authenticated', 'public.crear_complejo(jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.crear_complejo(jsonb)', 'EXECUTE')),
+  -- SECURITY INVOKER a propósito: `service_role` ya saltea RLS, así que la
+  -- función no necesita elevar nada. Si alguna vez quedara concedida a
+  -- `authenticated` por error, RLS le bloquearía las escrituras igual.
+  (132, 'y no eleva privilegios: es SECURITY INVOKER',
+       (SELECT NOT prosecdef FROM pg_proc
+         WHERE proname='crear_complejo' AND pronamespace='public'::regnamespace)),
+
+  -- --- 021: la marca del complejo -----------------------------------------
+  (140, 'las cuatro funciones de la 021 existen',
+       (SELECT count(DISTINCT proname) = 4 FROM pg_proc
+         WHERE pronamespace='public'::regnamespace
+           AND proname IN ('guardar_marca','contraste_wcag','luminancia_relativa',
+                           'tipografias_disponibles'))),
+  (141, 'y la que escribe la puede llamar el dueño y no un visitante',
+       has_function_privilege('authenticated',
+         'public.guardar_marca(uuid,text,text,text,text,text,text)', 'EXECUTE')
+        AND NOT has_function_privilege('anon',
+         'public.guardar_marca(uuid,text,text,text,text,text,text)', 'EXECUTE')),
+  -- La cuenta de WCAG, contra los dos valores que define la especificación y
+  -- que no dependen de ninguna implementación. Son los mismos que afirma
+  -- `src/lib/__tests__/contraste.manual.mts`: es lo que ata las dos copias.
+  (142, 'el contraste de negro sobre blanco da 21',
+       (public.contraste_wcag('#000000', '#ffffff') = 21.00)),
+  (143, 'y un color contra sí mismo da 1',
+       (public.contraste_wcag('#7f7f7f', '#7f7f7f') = 1.00)),
+  -- Ninguna de las tipografías ofrecidas pide una fuente a un tercero: eso le
+  -- contaría a ese tercero quién visitó la página del complejo.
+  (144, 'ninguna tipografía ofrecida carga una fuente externa',
+       (SELECT count(*) = 0 FROM public.tipografias_disponibles()
+         WHERE pila ILIKE '%url%' OR pila ILIKE '%http%' OR pila ILIKE '%@import%')),
+
   -- --- RLS en las tablas --------------------------------------------------
-  (90, 'RLS prendido en todas las tablas de public',
+  (99, 'RLS prendido en todas las tablas de public',
        (SELECT count(*) = 0 FROM pg_class c
          WHERE c.relnamespace='public'::regnamespace
            AND c.relkind='r'

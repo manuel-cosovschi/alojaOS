@@ -46,18 +46,41 @@ interface Prohibido {
   porque: string;
   /** 'texto' busca en cadenas; 'identificador' busca en el código sin comentarios. */
   donde: 'texto' | 'identificador';
+  /**
+   * Los archivos donde este patrón SÍ puede estar, con el motivo.
+   *
+   * Una excepción por archivo y no una bandera para apagar el chequeo: así la
+   * lista de lugares donde hay una marca de cliente es esta lista, se lee de
+   * un vistazo, y agregar uno nuevo es un cambio que se ve en el diff.
+   */
+  salvoEn?: Array<{ archivo: string; porque: string }>;
 }
+
+/**
+ * La página comercial de AlojaOS no es la página de un inquilino: es la del
+ * producto, y nombrar al complejo del que salió es lo que tiene que hacer. El
+ * nombre vive en un solo archivo —`src/lib/caso.ts`, que explica arriba de todo
+ * qué se puede escribir ahí y qué no— y es el único exceptuado.
+ */
+const EL_CASO = [
+  {
+    archivo: 'src/lib/caso.ts',
+    porque: 'es el caso que cuenta la página comercial, con permiso del dueño del complejo',
+  },
+];
 
 const PROHIBIDOS: Prohibido[] = [
   {
     patron: /Las\s*Ca[ñn]as|lascanias|lascaniasmardecobo/i,
     donde: 'texto',
     porque: 'el nombre de un complejo va en complejos.nombre',
+    salvoEn: EL_CASO,
   },
   {
     patron: /Mar\s*de\s*Cobo/i,
     donde: 'texto',
     porque: 'la localidad va en complejos.localidad',
+    salvoEn: EL_CASO,
   },
   {
     patron: /542236882986|2236882986/,
@@ -160,6 +183,15 @@ let hallazgos = 0;
 // hay.
 const vistos = new Set<string>();
 
+/**
+ * Qué excepciones se usaron de verdad.
+ *
+ * Una excepción que ya no hace falta no molesta a nadie y por eso se queda para
+ * siempre, abriendo un agujero que nadie está usando. Al final se avisa de las
+ * que sobraron, que es cuando hay que borrarlas.
+ */
+const usadas = new Set<string>();
+
 function reportar(rel: string, linea: number, encontro: string, porque: string) {
   const clave = `${rel}:${linea}:${encontro}`;
   if (vistos.has(clave)) return;
@@ -180,7 +212,13 @@ for (const carpeta of CARPETAS) {
     const literales = cadenas(contenido);
     const codigo = sinComentarios(contenido).split('\n');
 
-    for (const { patron, porque, donde } of PROHIBIDOS) {
+    for (const { patron, porque, donde, salvoEn } of PROHIBIDOS) {
+      const permitido = salvoEn?.find((s) => s.archivo === rel);
+      if (permitido) {
+        usadas.add(`${patron.source}@${rel}`);
+        continue;
+      }
+
       if (donde === 'texto') {
         for (const { linea, texto } of literales) {
           const m = new RegExp(patron.source, patron.flags.replace('g', '')).exec(texto);
@@ -196,8 +234,26 @@ for (const carpeta of CARPETAS) {
   }
 }
 
+const sobrantes = PROHIBIDOS.flatMap(({ patron, salvoEn }) =>
+  (salvoEn ?? [])
+    .filter((s) => !usadas.has(`${patron.source}@${s.archivo}`))
+    .map((s) => s.archivo)
+);
+
+if (sobrantes.length > 0) {
+  // Aviso, no falla: la excepción de más no deja entrar ninguna marca al
+  // código, sólo deja la puerta abierta donde ya no hay nadie.
+  console.log(
+    `\n⚠ ${sobrantes.length} excepción(es) que ningún archivo usa: ${[...new Set(sobrantes)].join(', ')}.` +
+      '\n  Si el archivo ya no está o ya no nombra a nadie, sacala de `salvoEn`.'
+  );
+}
+
 if (hallazgos === 0) {
-  console.log('OK     ninguna marca de cliente como valor en el código');
+  console.log(
+    `OK     ninguna marca de cliente como valor en el código` +
+      (usadas.size > 0 ? ` (${usadas.size} excepción(es) declarada(s) y usada(s))` : '')
+  );
   process.exit(0);
 }
 

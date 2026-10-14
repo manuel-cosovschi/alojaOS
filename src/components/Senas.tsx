@@ -17,6 +17,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { aprobar, rechazar, enlaceAlComprobante, type Resultado } from '@/actions/panel';
+import { senaDe } from '@/lib/precios';
 import type { SenaPendiente } from '@/lib/panel';
 
 const plata = (n: string | null, moneda: string) =>
@@ -28,14 +29,26 @@ const plata = (n: string | null, moneda: string) =>
         maximumFractionDigits: 0,
       }).format(Number(n));
 
+/**
+ * La seña de una reserva, a partir del total que devuelve la base.
+ *
+ * Devuelve `null` cuando no hay total, para que `plata()` muestre el guión en
+ * vez de un `$ 0` que parecería una seña de cero pesos.
+ */
+const senaDeLaReserva = (total: string | null, porcentaje: number): string | null =>
+  total === null ? null : String(senaDe(Number(total), porcentaje));
+
 export function Senas({
   senas,
   moneda,
   zonaHoraria,
+  porcentajeSena,
 }: {
   senas: SenaPendiente[];
   moneda: string;
   zonaHoraria: string;
+  /** El % del complejo. Hace falta acá porque `reservas_pendientes()` devuelve el total. */
+  porcentajeSena: number;
 }) {
   if (senas.length === 0) {
     return (
@@ -53,7 +66,13 @@ export function Senas({
     // a la fila correcta y apuntar a la primera que coincida.
     <ul aria-label="Señas que esperan revisión" className="space-y-3">
       {senas.map((s) => (
-        <Sena key={s.id} sena={s} moneda={moneda} zonaHoraria={zonaHoraria} />
+        <Sena
+          key={s.id}
+          sena={s}
+          moneda={moneda}
+          zonaHoraria={zonaHoraria}
+          porcentajeSena={porcentajeSena}
+        />
       ))}
     </ul>
   );
@@ -63,10 +82,12 @@ function Sena({
   sena,
   moneda,
   zonaHoraria,
+  porcentajeSena,
 }: {
   sena: SenaPendiente;
   moneda: string;
   zonaHoraria: string;
+  porcentajeSena: number;
 }) {
   const router = useRouter();
   const [enCurso, empezar] = useTransition();
@@ -106,9 +127,18 @@ function Sena({
           <span className="font-semibold">{sena.huesped_nombre ?? 'Sin nombre'}</span>
           <span className="ml-2 text-sm opacity-60">{sena.unidad_codigo}</span>
         </div>
+        {/* ------------------------------------------------------------------
+            El número que el dueño compara contra su homebanking.
+
+            Acá decía `Seña: <strong>{importe}</strong> del total`, y `importe`
+            es el total de la estadía, no la seña. Con una seña del 50 % el
+            panel mostraba el doble de lo que el huésped tenía que transferir:
+            el dueño que mirara la transferencia de verdad iba a creer que le
+            pagaron la mitad, y podía rechazar una reserva buena.
+            ------------------------------------------------------------------ */}
         <div className="text-sm">
-          Seña: <strong>{plata(sena.importe, moneda)}</strong>
-          <span className="opacity-50"> del total</span>
+          Seña: <strong>{plata(senaDeLaReserva(sena.importe, porcentajeSena), moneda)}</strong>
+          <span className="opacity-50"> de {plata(sena.importe, moneda)}</span>
         </div>
       </div>
 

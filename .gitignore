@@ -36,3 +36,7 @@ supabase/.temp/
 
 # Las contraseñas del complejo de ejemplo, que escribe scripts/sembrar-demo.mts.
 .alojaos-demo*
+
+# Datos de clientes de verdad: nombre, telefono, CBU. No van al repo.
+clientes/
+.alojaos-alta-*.json

@@ -14,14 +14,18 @@
     "aislamiento": "tsx scripts/aislamiento.ts",
     "sin-marca": "tsx scripts/sin-marca.ts",
     "test": "npm run typecheck && npm run sin-marca && npm run test:reglas",
-    "test:reglas": "tsx src/lib/__tests__/fechas.manual.mts && tsx src/lib/__tests__/precios.manual.mts && tsx src/lib/__tests__/calendario.manual.mts && tsx src/lib/__tests__/temporada.manual.mts && tsx src/lib/__tests__/tenant.manual.mts",
+    "test:reglas": "tsx src/lib/__tests__/fechas.manual.mts && tsx src/lib/__tests__/precios.manual.mts && tsx src/lib/__tests__/calendario.manual.mts && tsx src/lib/__tests__/temporada.manual.mts && tsx src/lib/__tests__/tenant.manual.mts && tsx src/lib/__tests__/contraste.manual.mts",
     "dev:local": "./scripts/dev-local.sh",
     "prueba:navegador": "tsx scripts/prueba-navegador.mts",
     "prueba:panel": "tsx scripts/prueba-panel.mts",
     "prueba:duenos": "tsx scripts/prueba-dos-duenos.mts",
     "prueba:clave-rota": "./scripts/prueba-clave-rota.sh",
     "prueba:despliegue": "tsx scripts/prueba-despliegue.mts",
-    "prueba:comercial": "tsx scripts/prueba-comercial.mts"
+    "prueba:comercial": "tsx scripts/prueba-comercial.mts",
+    "alta": "tsx scripts/alta-de-cliente.mts",
+    "verificar": "tsx scripts/verificar-produccion.mts",
+    "huellas": "tsx scripts/huellas.mts",
+    "capturas": "tsx scripts/capturas.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

@@ -1,0 +1,36 @@
+{
+  "_comentario": [
+    "El formato del archivo que lee scripts/alta-de-cliente.mts.",
+    "Copiálo a clientes/<slug>.json —esa carpeta está en .gitignore— y editálo.",
+    "Los datos de acá son inventados a propósito: `npm run sin-marca` falla si",
+    "en el repo apareciera el nombre o el teléfono de un cliente de verdad.",
+    "",
+    "Obligatorios: slug, nombre, mail_del_duenio, ultima_fecha, unidades.",
+    "El resto tiene valor por omisión o se puede cargar después desde el panel."
+  ],
+
+  "slug": "cabanias-del-sol",
+  "nombre": "Cabañas del Sol",
+  "localidad": "Villa Ejemplo",
+  "provincia": "Buenos Aires",
+
+  "mail_del_duenio": "duenio@ejemplo.test",
+  "nombre_del_duenio": "Nombre Apellido",
+
+  "whatsapp": "5490000000000",
+  "email": "hola@ejemplo.test",
+  "datos_transferencia": "Alias: cabanias.del.sol\nCBU: 0000003100000000000001\nTitular: Nombre Apellido",
+
+  "porcentaje_sena": 50,
+  "horas_vencimiento_sena": 6,
+
+  "primera_fecha": null,
+  "ultima_fecha": "2027-03-31",
+  "minimo_noches": 2,
+
+  "unidades": [
+    { "codigo": "C1", "nombre": "Cabaña Uno", "capacidad_maxima": 4, "sugerencia_ocupacion": "ideal 2 adultos y 2 chicos" },
+    { "codigo": "C2", "nombre": "Cabaña Dos", "capacidad_maxima": 6 },
+    { "codigo": "C3", "nombre": "Cabaña Tres", "capacidad_maxima": 2 }
+  ]
+}

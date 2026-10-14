@@ -94,6 +94,42 @@ async function base<T = unknown>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+/**
+ * Las trece funciones del panel que ESCRIBEN los datos del complejo.
+ *
+ * Se las llama con un complejo inventado y con la clave de servicio, que no
+ * tiene `auth.uid()`: `es_miembro()` devuelve false y todas levantan
+ * `insufficient_privilege` antes de tocar una fila. O sea que este sondeo no
+ * puede escribir nada en producción — lo único que distingue es un 404 con
+ * PGRST202 («la función no existe») de cualquier otra respuesta.
+ */
+const INVENTADO = '00000000-0000-4000-8000-000000000000';
+const ESCRITURAS: Array<[string, Record<string, unknown>]> = [
+  ['guardar_periodo', { p_complejo: INVENTADO, p_desde: '2099-01-01', p_hasta: '2099-01-02', p_precios: {} }],
+  ['borrar_periodo', { p_periodo: INVENTADO }],
+  ['guardar_config_calendario', { p_complejo: INVENTADO, p_ultima: '2099-01-01', p_minimo: 1, p_primera: null }],
+  ['guardar_minimo', { p_complejo: INVENTADO, p_desde: '2099-01-01', p_hasta: '2099-01-02', p_noches: 1, p_dias: null, p_etiqueta: null, p_minimo: null }],
+  ['borrar_minimo', { p_minimo: INVENTADO }],
+  ['guardar_bloque_fijo', { p_complejo: INVENTADO, p_check_in: '2099-01-01', p_check_out: '2099-01-02', p_etiqueta: null, p_bloque: null }],
+  ['borrar_bloque_fijo', { p_bloque: INVENTADO }],
+  ['guardar_datos_del_complejo', { p_complejo: INVENTADO, p_nombre: 'x', p_whatsapp: null, p_transferir: null, p_localidad: null, p_email: null, p_porcentaje: null, p_horas: null }],
+  ['habilitar_reservas', { p_complejo: INVENTADO, p_habilitar: false }],
+  ['guardar_unidad', { p_complejo: INVENTADO, p_codigo: 'X', p_nombre: 'x', p_capacidad: 1, p_sugerencia: null, p_orden: null, p_activa: true, p_unidad: null }],
+  ['borrar_unidad', { p_unidad: INVENTADO }],
+  ['crear_complejo', { p_datos: {} }],
+  ['guardar_marca', { p_complejo: INVENTADO, p_principal: '#000000', p_fondo: '#ffffff', p_texto: '#000000', p_acento: '#ff0000', p_titulos: null, p_cuerpo: null }],
+];
+
+/** Un día como lo escribe la pantalla: `11/02/27`. El `T12:00` evita que se corra uno. */
+function diaCorto(iso: string): string {
+  return new Date(`${iso}T12:00:00Z`).toLocaleDateString('es-AR', {
+    timeZone: 'UTC',
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+  });
+}
+
 /** El huésped que usa esta batería. Por este nombre se limpia. */
 const HUESPED = 'Prueba de Panel';
 
@@ -102,7 +138,14 @@ async function limpiar(): Promise<number> {
     `reservas?huesped_nombre=eq.${encodeURIComponent(HUESPED)}`,
     { method: 'DELETE', headers: { Prefer: 'return=representation' } }
   );
-  return borradas.length;
+  // Y los bloqueos que deja el caso de las fechas cerradas. Sin esto, la
+  // segunda corrida choca contra el bloqueo de la primera y reporta que cerrar
+  // fechas no funciona, cuando lo que pasa es que funcionó demasiado bien.
+  const bloqueos = await base<unknown[]>(
+    `reservas?motivo_estado=eq.${encodeURIComponent('La prueba la cerró')}`,
+    { method: 'DELETE', headers: { Prefer: 'return=representation' } }
+  );
+  return borradas.length + bloqueos.length;
 }
 
 /**
@@ -236,6 +279,10 @@ async function main() {
       await otra.close();
     }
 
+    const [{ id: complejoDuenio }] = await base<Array<{ id: string }>>(
+      `complejos?slug=eq.${SLUG}&select=id`
+    );
+
     // --- 3. Confirmar confirma de verdad ----------------------------------
     // Apuntando a LA fila de esta prueba, dentro de LA lista que corresponde.
     //
@@ -253,6 +300,35 @@ async function main() {
     const fila = senas.locator('li').filter({ hasText: HUESPED });
     verificar(await fila.count() === 1, 'la seña de esta prueba está en la lista una sola vez',
       `encontré ${await fila.count()}`);
+
+    // --- El número que el dueño compara contra su homebanking --------------
+    // La fila decía `Seña: $ 200.000` cuando la seña era $ 100.000: mostraba
+    // `importe`, que es el TOTAL de la estadía. El dueño que mirara la
+    // transferencia de verdad iba a ver la mitad de lo que el panel pedía, y
+    // podía rechazar una reserva buena.
+    //
+    // El porcentaje sale de la base y no de un `50` escrito acá: el dueño lo
+    // puede cambiar desde su panel, y una prueba con el número clavado
+    // empezaría a fallar el día que lo cambie, por una razón que no es un bug.
+    {
+      const [c] = await base<Array<{ porcentaje_sena: string }>>(
+        `complejos?slug=eq.${SLUG}&select=porcentaje_sena`
+      );
+      const esperada = Math.round((200000 * Number(c.porcentaje_sena)) / 100);
+      const miles = (n: number) => n.toLocaleString('es-AR');
+      const texto = (await fila.innerText()).replace(/\s+/g, ' ');
+      verificar(
+        new RegExp(`Seña:\\s*\\$\\s*${miles(esperada).replace('.', '\\.')}\\b`).test(texto),
+        `la fila muestra la seña (${miles(esperada)}) y no el total (200.000)`,
+        texto.slice(0, 160)
+      );
+      verificar(
+        texto.includes(miles(200000)),
+        'y el total al lado, para que se vean los dos números',
+        texto.slice(0, 160)
+      );
+    }
+
     await fila.getByRole('button', { name: 'Confirmar la reserva' }).click();
     await page.waitForTimeout(2500);
 
@@ -371,7 +447,292 @@ async function main() {
       );
     }
 
-    // --- 7. Salir ---------------------------------------------------------
+    // --- 7. Cerrar y reabrir fechas ---------------------------------------
+    // Lo que el dueño hace más seguido después de aprobar una seña. Hasta hoy
+    // `desbloquear()` existía y `bloquear()` no: podía deshacer algo que no
+    // podía hacer.
+    {
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const panelFechas = page.locator('div').filter({ hasText: /^Fechas cerradas/ }).first();
+
+      // El complejo de ejemplo ya tiene una semana cerrada —«La usa la
+      // familia»— sembrada. Que aparezca es mejor prueba que una lista vacía:
+      // demuestra que la lista lee de la base.
+      //
+      // Y es el par exacto de una aserción de la batería del huésped, que
+      // comprueba que la página pública NO publica ese mismo texto. El mismo
+      // dato: invisible para el que reserva, visible para el dueño.
+      verificar(
+        (await page.getByText('La usa la familia').count()) > 0,
+        'el panel muestra la fecha que el complejo ya tenía cerrada'
+      );
+
+      await page.getByRole('button', { name: 'Cerrar fechas' }).click();
+      await page.waitForTimeout(150);
+
+      // Un rango libre: 2027-06-10 al 14, lejos de todo lo que usan los otros
+      // casos de esta batería.
+      await page.getByLabel('Desde (primera noche)').fill('2027-06-10');
+      await page.getByLabel('Hasta (día de salida)').fill('2027-06-14');
+      await page.getByLabel(/Por qué/).fill('La prueba la cerró');
+
+      verificar(
+        (await page.getByText('Vas a cerrar').count()) > 0,
+        'y dice cuántas noches va a cerrar antes de apretar'
+      );
+
+      await page.getByRole('button', { name: 'Cerrar esas fechas' }).click();
+      await page.waitForTimeout(2500);
+
+      const bloqueos = await base<Array<{ id: string; estado: string; motivo_estado: string }>>(
+        `reservas?estado=eq.BLOCKED&check_in=eq.2027-06-10&select=id,estado,motivo_estado`
+      );
+      verificar(bloqueos.length === 1, 'cerrar fechas deja UN bloqueo en la base', `${bloqueos.length}`);
+      verificar(
+        bloqueos[0]?.motivo_estado === 'La prueba la cerró',
+        'con el motivo que escribió el dueño',
+        bloqueos[0]?.motivo_estado
+      );
+
+      // Y esas noches figuran ocupadas para el huésped.
+      const ocupadas = await base<Array<{ check_in: string }>>('rpc/noches_ocupadas', {
+        method: 'POST',
+        body: JSON.stringify({ p_complejo: complejoDuenio }),
+      });
+      verificar(
+        ocupadas.some((o) => o.check_in === '2027-06-10'),
+        'y esas noches quedan ocupadas para quien entra a reservar'
+      );
+
+      verificar(
+        (await page.getByRole('list', { name: 'Fechas cerradas' }).count()) > 0,
+        'y aparece en la lista de fechas cerradas'
+      );
+
+      // Lo que importa: cerrar algo VENDIDO tiene que rebotar y decir con qué.
+      await page.getByRole('button', { name: 'Cerrar fechas' }).click();
+      await page.waitForTimeout(150);
+      await page.getByLabel('Desde (primera noche)').fill('2027-06-11');
+      await page.getByLabel('Hasta (día de salida)').fill('2027-06-13');
+      await page.getByRole('button', { name: 'Cerrar esas fechas' }).click();
+      await page.waitForTimeout(2000);
+
+      const textoError = await page.locator('body').innerText();
+      verificar(
+        textoError.includes('ya están cerradas'),
+        'cerrar algo ya cerrado lo dice, no crea un segundo bloqueo'
+      );
+      verificar(
+        (await base<unknown[]>('reservas?estado=eq.BLOCKED&check_in=eq.2027-06-11&select=id')).length === 0,
+        'y no quedó nada escrito de ese intento'
+      );
+
+      // Reabrir.
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const lista = page.getByRole('list', { name: 'Fechas cerradas' });
+      await lista.locator('li').filter({ hasText: 'La prueba la cerró' })
+        .getByRole('button', { name: 'Reabrir' }).click();
+      await page.waitForTimeout(2500);
+
+      const despues = await base<Array<{ estado: string }>>(
+        `reservas?id=eq.${bloqueos[0].id}&select=estado`
+      );
+      verificar(
+        despues[0]?.estado === 'CANCELLED',
+        'reabrir deja el bloqueo CANCELLED en la base',
+        despues[0]?.estado
+      );
+
+      const ocupadasDespues = await base<Array<{ check_in: string }>>('rpc/noches_ocupadas', {
+        method: 'POST',
+        body: JSON.stringify({ p_complejo: complejoDuenio }),
+      });
+      verificar(
+        !ocupadasDespues.some((o) => o.check_in === '2027-06-10'),
+        'y las noches vuelven a estar a la venta de verdad, no sólo en la pantalla'
+      );
+    }
+
+    // --- 8. Precios y reglas de la temporada ------------------------------
+    // Lo que la pantalla tiene que hacer y sólo se ve desde el navegador: que
+    // los avisos que esta parte existe para dar —qué no se puede cotizar,
+    // cuántos días faltan para que la página deje de vender— estén EN la
+    // pantalla y no sólo en la respuesta de la base.
+    //
+    // Las expectativas salen de las TABLAS, leídas con la clave de servicio, y
+    // no de las funciones que esta prueba está probando. Preguntarle a
+    // `salud_de_los_precios()` si la pantalla muestra bien lo que dice
+    // `salud_de_los_precios()` no comprobaría nada. (Y además no se puede: con
+    // la clave de servicio no hay `auth.uid()`, así que `es_miembro()` dice no
+    // y la función levanta 403. Está bien que sea así.)
+    await page.goto(`${BASE}/panel`, { waitUntil: 'domcontentloaded' });
+
+    verificar(
+      await page.getByRole('heading', { name: 'Precios por período' }).isVisible(),
+      'el panel tiene la pantalla de precios'
+    );
+
+    const periodos = await base<Array<{ id: string; desde: string; hasta: string }>>(
+      `periodos_precio?complejo_id=eq.${complejoDuenio}&select=id,desde,hasta`
+    );
+    const unidadesDelComplejo = await base<Array<{ id: string }>>(
+      `unidades?complejo_id=eq.${complejoDuenio}&select=id`
+    );
+    const filasDePrecio = await base<Array<{ periodo_id: string }>>(
+      `precios_unidad?periodo_id=in.(${periodos.map((p) => p.id).join(',')})&select=periodo_id`
+    );
+
+    const enPantalla = page.getByRole('list', { name: 'Períodos de precio' });
+    verificar(
+      (await enPantalla.locator('li').count()) === periodos.length,
+      'y lista exactamente los períodos que hay en la base',
+      `pantalla ${await enPantalla.locator('li').count()} · base ${periodos.length}`
+    );
+
+    // El aviso de precios no puede quedarse callado: o dice que está todo
+    // cotizable, o dice qué no. Hasta hoy no decía nada, y una unidad sin
+    // precio quedaba invendible toda la temporada sin que nadie se enterara.
+    const faltanPrecios = filasDePrecio.length < periodos.length * unidadesDelComplejo.length;
+    const textoPanel = await page.locator('body').innerText();
+    verificar(
+      faltanPrecios
+        ? textoPanel.includes('no se puede') || textoPanel.includes('sin precio')
+        : textoPanel.includes('tienen precio') || textoPanel.includes('sin precio'),
+      'y la pantalla dice algo definido sobre los precios, nunca nada',
+      `${filasDePrecio.length} filas de precio para ${periodos.length} períodos × ${unidadesDelComplejo.length} unidades`
+    );
+
+    // El cronómetro de `ultima_fecha`: la única falla de este sistema que llega
+    // sola, sin que nadie haga nada. La pantalla tiene que decir el día.
+    verificar(
+      await page.getByRole('heading', { name: 'Hasta cuándo se puede reservar' }).isVisible(),
+      'y tiene la pantalla de las reglas de la temporada'
+    );
+
+    const [config] = await base<Array<{ ultima_fecha: string; minimo_noches: number }>>(
+      `config_calendario?complejo_id=eq.${complejoDuenio}&select=ultima_fecha,minimo_noches`
+    );
+    verificar(
+      config
+        ? textoPanel.includes(diaCorto(config.ultima_fecha))
+        : textoPanel.includes('No cargaste hasta cuándo se puede reservar'),
+      'y dice el día hasta el que se puede reservar, el que está en la base',
+      config ? `${config.ultima_fecha} → ${diaCorto(config.ultima_fecha)}` : 'sin config'
+    );
+    verificar(
+      await page.getByRole('list', { name: 'Mínimos por tramo' }).isVisible()
+        || textoPanel.includes('rige el mínimo general'),
+      'y el estado de los mínimos por tramo, cargados o no'
+    );
+    verificar(
+      await page.getByRole('list', { name: 'Bloques que van enteros' }).isVisible()
+        || textoPanel.includes('se venden de a una'),
+      'y el de los bloques que van enteros'
+    );
+
+    // --- 8b. Los datos del complejo ---------------------------------------
+    // Hasta la 018 el panel decía «se carga en los datos del complejo» y esa
+    // pantalla no existía: mandaba al dueño a un lugar al que no podía ir. Lo
+    // que se comprueba acá es que ahora el aviso lleve a algo.
+    verificar(
+      await page.getByRole('heading', { name: 'Datos del complejo' }).isVisible(),
+      'el panel tiene la pantalla de los datos del complejo'
+    );
+
+    const [datos] = await base<
+      Array<{ slug: string; datos_transferencia: string | null; reservas_habilitadas: boolean }>
+    >(`complejos?id=eq.${complejoDuenio}&select=slug,datos_transferencia,reservas_habilitadas`);
+
+    // La dirección de la página se muestra y no se edita: es el link que el
+    // dueño les mandó a sus huéspedes.
+    verificar(
+      textoPanel.includes(datos.slug),
+      'y muestra la dirección de su página, que no se puede cambiar',
+      datos.slug
+    );
+    verificar(
+      (await page.locator(`input[value="${datos.slug}"]`).count()) === 0,
+      'y no la ofrece como campo editable'
+    );
+
+    // El aviso de «no cargaste dónde transferir» tiene que llevar a la pantalla
+    // de abajo, no nombrarla. Se comprueba que el ancla exista de verdad.
+    if (datos.datos_transferencia === null) {
+      const anclaOk = await page.evaluate(
+        (slug) => !!document.getElementById(`datos-${slug}`),
+        datos.slug
+      );
+      verificar(anclaOk, 'y el aviso de dónde transferir lleva a un ancla que existe');
+    } else {
+      verificar(
+        await page.evaluate((slug) => !!document.getElementById(`datos-${slug}`), datos.slug),
+        'y la pantalla de datos tiene su ancla, para que el aviso pueda llevar a ella'
+      );
+    }
+
+    verificar(
+      await page.getByRole('list', { name: 'Tus unidades', exact: true }).isVisible(),
+      'y lista las unidades del complejo'
+    );
+    verificar(
+      // `exact: true` porque `getByRole` matchea por subcadena, y sin eso
+      // «Unidades» agarraba también la lista «Unidades sin precio» de los
+      // precios. Es el segundo nombre ambiguo de esta batería; por eso la
+      // etiqueta de la lista pasó a ser «Tus unidades», que es lo que dice el
+      // título y no se parece a nada más.
+      (await page.getByRole('list', { name: 'Tus unidades', exact: true }).locator('li').count()) ===
+        unidadesDelComplejo.length,
+      'con todas las que hay en la base',
+      `pantalla ${await page.getByRole('list', { name: 'Tus unidades', exact: true }).locator('li').count()} · base ${unidadesDelComplejo.length}`
+    );
+
+    // El interruptor del alta pública dice el estado de verdad, no uno fijo.
+    verificar(
+      await page
+        .getByRole('heading', {
+          name: datos.reservas_habilitadas
+            ? 'Tu página toma reservas'
+            : 'Tu página no toma reservas',
+        })
+        .isVisible(),
+      'y dice si la página está tomando reservas, lo que dice la base',
+      String(datos.reservas_habilitadas)
+    );
+
+    // --- 9. Que las escrituras del panel estén en la base -----------------
+    // Esta sección no toca la pantalla: le pregunta a la base si las siete
+    // funciones que escriben las reglas existen. Va en la batería que corre
+    // contra producción porque es donde faltaron.
+    //
+    // No se saltea ni se da por buena: si falta alguna, falla, y dice cuál y
+    // qué hacer. Una batería que pasa con el panel a medio aplicar sería una
+    // batería que contesta que está bien sin estar bien.
+    const FALTANTES: string[] = [];
+    for (const [fn, args] of ESCRITURAS) {
+      const res = await fetch(`${URL_SUPA}/rest/v1/rpc/${fn}`, {
+        method: 'POST',
+        headers: cab,
+        body: JSON.stringify(args),
+      });
+      // Un 404 con PGRST202 es «la función no existe». Cualquier otra respuesta
+      // —incluido el 403 de `es_miembro()`— quiere decir que sí existe, que es
+      // lo único que esta prueba comprueba. Lo que la función HACE está probado
+      // en `prueba-base.sql`, contra un Postgres de verdad.
+      if (res.status === 404 && (await res.text()).includes('PGRST202')) FALTANTES.push(fn);
+    }
+
+    verificar(
+      FALTANTES.length === 0,
+      'las trece funciones que escriben están aplicadas en la base',
+      FALTANTES.length === 0
+        ? ''
+        : `faltan ${FALTANTES.length}: ${FALTANTES.join(', ')}\n       ` +
+          'El panel muestra todo y no guarda nada. Se arregla pegando las ' +
+          'migraciones 016 a 021 en el SQL Editor de Supabase, en ese orden; ' +
+          'está explicado en supabase/a_mano/02_las_escrituras_del_panel.sql'
+    );
+
+    // --- 10. Salir --------------------------------------------------------
     await page.goto(`${BASE}/salir`, { waitUntil: 'domcontentloaded' });
     verificar(page.url().includes('/login'), 'salir vuelve al login', page.url());
     await page.goto(`${BASE}/panel`, { waitUntil: 'domcontentloaded' });

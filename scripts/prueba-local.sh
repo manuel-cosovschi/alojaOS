@@ -25,6 +25,14 @@ BIN="${PG_BIN:-$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1
 [ -x "$BIN/initdb" ] || { echo "✗ No encontré initdb. Instalá Postgres o exportá PG_BIN."; exit 1; }
 export PATH="$BIN:$PATH"
 
+# Con `--huellas` la única salida útil son las huellas, y tiene que poder entrar
+# a un `diff`. El progreso del arnés —levantar Postgres, aplicar migraciones— se
+# manda a stderr y la consulta escribe en el fd 3, que es el stdout de verdad.
+# La primera versión no hacía esto y la salida salía mezclada con veintidós
+# líneas de migraciones aplicadas, o sea inservible para lo único que sirve.
+exec 3>&1
+if [ "${1:-}" = "--huellas" ]; then exec 1>&2; fi
+
 TMP="$(mktemp -d)"
 limpiar() {
   pg_ctl -D "$TMP/data" stop -m immediate >/dev/null 2>&1 || true
@@ -128,6 +136,27 @@ for f in "$RAIZ"/supabase/migrations/*.sql; do
 done
 
 echo
+# ---------------------------------------------------------------------------
+# Las huellas de las funciones, para comparar con producción
+# ---------------------------------------------------------------------------
+# Va acá, recién aplicadas las migraciones y antes de las pruebas: antes no hay
+# funciones que mirar, y al final habría que esperar todo el arnés para ver
+# cuarenta y cinco líneas —la primera versión estaba al final y la salida salía
+# mezclada con las 319 aserciones, o sea inservible para un `diff`—.
+#
+# Con `--huellas` imprime `md5(prosrc)` de cada función de `public` y no imprime
+# nada más, así que la salida se puede comparar con un `diff` contra la misma
+# consulta corrida en Supabase.
+#
+# Para qué: el verificador comprueba que las funciones EXISTAN y que los
+# permisos sean los que tienen que ser, no que el cuerpo sea el del repo.
+# Cuando una migración se aplica a medias puede quedar en producción la versión
+# ANTERIOR de una función: existe, está concedida, contesta, y hace otra cosa.
+if [ "${1:-}" = "--huellas" ]; then
+  $PSQL -d alojaos -At -F '  ' -f "$RAIZ/scripts/huellas-de-funciones.sql" >&3
+  exit 0
+fi
+
 echo "→ pruebas de la base"
 $PSQL -d alojaos -f "$RAIZ/scripts/prueba-base.sql"
 
@@ -195,6 +224,19 @@ echo
 # contesta FALTA sobre algo que está, y eso manda a arreglar lo que no está roto.
 #
 # Acá, con todas las migraciones aplicadas, tiene que decir `ok` en todo.
+# Los números de fila del verificador no se pueden repetir.
+#
+# No es cosmético: la salida del verificador es una lista de «NN: qué falta», y
+# dos filas con el mismo número mandan a mirar la que no es. Ya pasó con el
+# `lpad(n, 2)` de prueba-base.sql, que recortaba y hacía que la 103, la 104 y la
+# 105 se imprimieran todas como «10».
+REPETIDOS=$(grep -oP '^  \(\K\d+(?=, )' "$RAIZ/scripts/verificar-produccion.sql" | sort | uniq -d)
+if [ -n "$REPETIDOS" ]; then
+  echo "   ✗ verificar-produccion.sql tiene números de fila repetidos:"
+  echo "$REPETIDOS" | sed 's/^/     /'
+  exit 1
+fi
+
 echo "→ el verificador de producción, contra esta base (tiene que dar todo ok)"
 VERIF="$TMP/verificacion.txt"
 if ! $PSQL -d alojaos -f "$RAIZ/scripts/verificar-produccion.sql" > "$VERIF" 2>&1; then

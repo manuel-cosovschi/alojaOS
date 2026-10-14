@@ -1,6 +1,17 @@
 import { redirect } from 'next/navigation';
 import { usuarioActual } from '@/lib/supabase/sesion';
-import { misComplejos, senasPendientes, saludDelVencimiento, avisosQueNoSalieron } from '@/lib/panel';
+import {
+  misComplejos,
+  senasPendientes,
+  saludDelVencimiento,
+  avisosQueNoSalieron,
+  unidadesDe,
+  bloqueosDe,
+  periodosDe,
+  saludDeLosPrecios,
+  reglasDe,
+  tipografiasDisponibles,
+} from '@/lib/panel';
 import { Senas } from '@/components/Senas';
 import { SaludDelReloj } from '@/components/SaludDelReloj';
 import { SaludDelComprobante } from '@/components/SaludDelComprobante';
@@ -8,6 +19,12 @@ import { AvisosQueNoSalieron } from '@/components/AvisosQueNoSalieron';
 import { saludDelComprobante } from '@/lib/salud';
 import { salir } from '@/actions/sesion';
 import { direccionDelComplejo } from '@/lib/tenant';
+import { hoyISO } from '@/lib/fechas';
+import { Fechas } from '@/components/Fechas';
+import { Precios } from '@/components/Precios';
+import { ReglasDeTemporada } from '@/components/ReglasDeTemporada';
+import { DatosDelComplejo } from '@/components/DatosDelComplejo';
+import { Marca } from '@/components/Marca';
 
 /**
  * El panel del dueño.
@@ -31,17 +48,28 @@ export default async function Panel() {
   const complejos = await misComplejos();
   // Las dos en paralelo: una pregunta a la base y la otra al almacenamiento, y
   // no dependen entre sí.
-  const [salud, saludComprobante] = await Promise.all([
+  // Las tres en paralelo. La lista de tipografías es igual para todos los
+  // complejos, así que se pide una vez y no una por complejo.
+  const [salud, saludComprobante, tipografias] = await Promise.all([
     saludDelVencimiento(),
     saludDelComprobante(),
+    tipografiasDisponibles(),
   ]);
 
   // Las señas de cada complejo, en paralelo: son consultas independientes y
   // esperarlas en fila haría que un dueño con tres complejos espere el triple.
   const porComplejo = await Promise.all(
     complejos.map(async (c) => {
-      const [senas, avisos] = await Promise.all([senasPendientes(c.id), avisosQueNoSalieron(c.id)]);
-      return { complejo: c, senas, avisos };
+      const [senas, avisos, unidades, bloqueos, periodos, saludPrecios, reglas] = await Promise.all([
+        senasPendientes(c.id),
+        avisosQueNoSalieron(c.id),
+        unidadesDe(c.id),
+        bloqueosDe(c.id),
+        periodosDe(c.id),
+        saludDeLosPrecios(c.id),
+        reglasDe(c.id),
+      ]);
+      return { complejo: c, senas, avisos, unidades, bloqueos, periodos, saludPrecios, reglas };
     })
   );
 
@@ -69,7 +97,7 @@ export default async function Panel() {
             <SaludDelComprobante salud={saludComprobante} />
             {salud && <SaludDelReloj salud={salud} />}
 
-            {porComplejo.map(({ complejo, senas, avisos }) => (
+            {porComplejo.map(({ complejo, senas, avisos, unidades, bloqueos, periodos, saludPrecios, reglas }) => (
               <section key={complejo.id}>
                 <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
                   <h2 className="text-lg font-semibold">{complejo.nombre}</h2>
@@ -104,7 +132,61 @@ export default async function Panel() {
                   senas={senas}
                   moneda={complejo.moneda}
                   zonaHoraria={complejo.zona_horaria}
+                  porcentajeSena={Number(complejo.porcentaje_sena)}
                 />
+
+                {/* Las fechas cerradas van después de las señas: una seña tiene
+                    plazo y esto no. Lo urgente primero. */}
+                <div className="mt-4">
+                  <Fechas
+                    complejoId={complejo.id}
+                    unidades={unidades}
+                    bloqueos={bloqueos}
+                    hoy={hoyISO(complejo.zona_horaria)}
+                    zonaHoraria={complejo.zona_horaria}
+                  />
+                </div>
+
+                {/* Los precios van al final porque es lo que se toca una vez
+                    por temporada, no todos los días. Pero su aviso de qué no se
+                    puede cotizar está adentro del bloque, así que una unidad
+                    invendible se ve sin tener que abrir nada. */}
+                <div className="mt-4">
+                  <Precios
+                    complejoId={complejo.id}
+                    unidades={unidades}
+                    periodos={periodos}
+                    salud={saludPrecios}
+                    moneda={complejo.moneda}
+                    hoy={hoyISO(complejo.zona_horaria)}
+                  />
+                </div>
+
+                {/* Las reglas de la temporada al final, pero el cronómetro de
+                    `ultima_fecha` está adentro y en rojo: es la única falla de
+                    este sistema que llega sola, sin que nadie haga nada. */}
+                <div className="mt-4">
+                  <ReglasDeTemporada complejoId={complejo.id} reglas={reglas} />
+                </div>
+
+                {/* Y los datos del complejo al final, porque se tocan una vez
+                    al principio y después casi nunca. La dirección se arma con
+                    `direccionDelComplejo()`, la misma que el enlace de arriba:
+                    si el dominio cambia, cambia en un solo lugar. */}
+                <div className="mt-4" id={`datos-${complejo.slug}`}>
+                  <DatosDelComplejo
+                    complejo={complejo}
+                    unidades={unidades}
+                    direccion={direccionDelComplejo(complejo.slug)}
+                  />
+                </div>
+
+                {/* La marca al final: se toca una vez, al principio. Y tiene
+                    vista previa porque dar un campo de color sin forma de ver
+                    el resultado es peor que no darlo. */}
+                <div className="mt-4">
+                  <Marca complejo={complejo} tipografias={tipografias} />
+                </div>
               </section>
             ))}
           </>
@@ -134,13 +216,24 @@ function SinComplejos() {
  * huésped le ofrece escribir por WhatsApp. Pero es la clase de cosa que nadie
  * nota desde adentro, así que el panel la dice en vez de esperar que el dueño
  * se dé cuenta por una queja.
+ *
+ * Y hasta la 018 este aviso terminaba en «se carga en los datos del complejo»,
+ * una pantalla que no existía. O sea que mandaba al dueño a un lugar al que no
+ * podía ir y el aviso le quedaba ahí para siempre por más que lo leyera. Ahora
+ * la pantalla está abajo, y el enlace lleva hasta ella en vez de nombrarla.
  */
 function SinDatosBancarios({ slug }: { slug: string }) {
+  // El ancla lleva el slug porque un dueño puede tener más de un complejo en
+  // la misma página, y un ancla fija lo mandaría a los datos de otro.
   return (
     <div className="mb-3 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
       <strong>No cargaste dónde transferir.</strong> El huésped que reserve en{' '}
       <code>{slug}</code> va a ver la seña y no el alias ni el CBU, y le vamos a
-      ofrecer que te escriba por WhatsApp. Se carga en los datos del complejo.
+      ofrecer que te escriba por WhatsApp.{' '}
+      <a href={`#datos-${slug}`} className="font-semibold underline">
+        Cargalo acá
+      </a>
+      .
     </div>
   );
 }

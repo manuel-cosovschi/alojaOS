@@ -255,6 +255,27 @@ async function main() {
     'y aparece la seña, con el porcentaje del complejo'
   );
 
+  // --- Las noches del medio se VEN elegidas --------------------------------
+  // No alcanza con que la clase esté puesta. `bg-marca-principal/15` estuvo en
+  // producción pintando `rgba(0,0,0,0)`: Tailwind no le puede meter el alfa a
+  // un color que es `var(--marca-principal)` a secas, así que la clase salía en
+  // el HTML y no pintaba nada. El huésped elegía siete noches y veía marcadas
+  // dos, las dos puntas.
+  //
+  // Por eso esto le pregunta al navegador por el color de verdad y no por la
+  // clase: la clase estaba bien, el color no.
+  {
+    const fondo = await dia(page, '19 de enero de 2027').evaluate(
+      (n) => getComputedStyle(n as HTMLElement).backgroundColor
+    );
+    const transparente = /^rgba\(0,\s*0,\s*0,\s*0\)$/.test(fondo) || fondo === 'transparent';
+    verificar(
+      !transparente,
+      'una noche del medio de la estadía se ve elegida',
+      `el 19 tiene la clase de «dentro del rango» y el navegador lo pinta ${fondo}`
+    );
+  }
+
   // Un lunes de temporada alta: el día de entrada no está permitido.
   await page.getByRole('button', { name: 'elegir otras fechas' }).click();
   const lunes = dia(page, '18 de enero de 2027');
@@ -347,9 +368,21 @@ async function main() {
     // la subida rota a propósito —sin clave de servicio— y lo que tiene que
     // pasar es que la pantalla lo diga, no que felicite a nadie.
     //
-    // Con la clave cargada este tramo se saltea: ahí la subida funciona y lo
-    // que hay que comprobar es lo contrario (ALOJAOS_SUBIDA_ANDA=1).
-    const subidaAnda = process.env.ALOJAOS_SUBIDA_ANDA === '1';
+    // Qué se comprueba depende de si el servidor tiene clave de servicio, y eso
+    // se MIRA en vez de pedirlo por una bandera.
+    //
+    // Antes era `ALOJAOS_SUBIDA_ANDA=1` y por omisión asumía la subida rota.
+    // O sea que la invocación normal —`npm run prueba:navegador` contra un
+    // entorno bien configurado— daba tres FALLA por una razón que no era un
+    // problema. Un arnés cuyo caso por omisión es el roto enseña a leer sus
+    // fallas como ruido, y después la que importa pasa de largo.
+    //
+    // La bandera sigue sirviendo para forzar el caso a mano, sobre todo cuando
+    // ALOJAOS_BASE apunta a un servidor que no es el de este .env.local.
+    const subidaAnda =
+      process.env.ALOJAOS_SUBIDA_ANDA === '1' ||
+      (process.env.ALOJAOS_SUBIDA_ANDA !== '0' &&
+        !!(process.env.SUPABASE_SERVICE_ROLE_KEY ?? delEnv('SUPABASE_SERVICE_ROLE_KEY')));
 
     await page.getByLabel('Elegir el comprobante').setInputFiles({
       name: 'transferencia.png',
@@ -409,27 +442,64 @@ async function main() {
         // darle tiempo. Si no apareciera, la prueba lo dice en vez de suponer
         // que tardó: una reserva sin fila de aviso es una reserva de la que el
         // huésped no se enteró.
-        let aviso: { estado: string; error: string | null; destino: string | null } | undefined;
+        let aviso:
+          | { estado: string; error: string | null; destino: string | null; id_externo: string | null }
+          | undefined;
         for (let i = 0; i < 12 && !aviso; i += 1) {
           await page.waitForTimeout(500);
           const res = await fetch(
-            `${urlSupa}/rest/v1/avisos?reserva_id=eq.${idReserva}&select=estado,error,destino`,
+            `${urlSupa}/rest/v1/avisos?reserva_id=eq.${idReserva}&select=estado,error,destino,id_externo`,
             { headers: { apikey: servicio, Authorization: `Bearer ${servicio}` } }
           );
           if (res.ok) [aviso] = (await res.json()) as typeof aviso extends undefined ? never[] : Array<NonNullable<typeof aviso>>;
         }
 
         verificar(!!aviso, 'reservar deja anotado el intento de aviso por mail');
-        verificar(
-          aviso?.estado !== 'ENVIADO',
-          'y sin proveedor de mail NO figura como enviado',
-          `quedó en ${aviso?.estado}`
-        );
-        verificar(
-          aviso?.estado === 'SIN_CONFIGURAR' && !!aviso?.error,
-          'figura como SIN_CONFIGURAR, con el motivo escrito',
-          `${aviso?.estado}: ${aviso?.error}`
-        );
+
+        // ----------------------------------------------------------------
+        // El estado que se espera depende de cómo está configurado el mail
+        // ----------------------------------------------------------------
+        // Tres estados posibles, y el que corresponde se MIRA en vez de
+        // asumirse —el mismo arreglo que la subida de comprobantes, por el
+        // mismo motivo: un arnés que asume el caso roto da falsas alarmas, y
+        // una falsa alarma enseña a leer las fallas como ruido—.
+        //
+        //   sin clave            → SIN_CONFIGURAR, y el motivo nombra la clave
+        //   con clave, sin de    → SIN_CONFIGURAR, y el motivo nombra RESEND_DE
+        //   con las dos          → ENVIADO
+        //
+        // El tercero es el único que no se puede exigir hoy: `RESEND_DE` pide un
+        // dominio verificado en Resend, y hasta que exista alojaos.shop la
+        // cuenta no tiene ninguno. Cuando lo tenga, esta misma aserción lo
+        // comprueba sin tocar nada.
+        const hayClave = !!(process.env.RESEND_API_KEY ?? delEnv('RESEND_API_KEY'));
+        const hayRemitente = !!(process.env.RESEND_DE ?? delEnv('RESEND_DE'));
+
+        if (hayClave && hayRemitente) {
+          verificar(
+            aviso?.estado === 'ENVIADO' && !!aviso?.id_externo,
+            'con el mail configurado, el aviso figura como ENVIADO y con el id del proveedor',
+            `${aviso?.estado}: ${aviso?.error ?? ''}`
+          );
+        } else {
+          verificar(
+            aviso?.estado === 'SIN_CONFIGURAR' && !!aviso?.error,
+            'sin el mail configurado, el aviso figura como SIN_CONFIGURAR y NO como enviado',
+            `${aviso?.estado}: ${aviso?.error}`
+          );
+          // Y el motivo tiene que decir QUÉ falta, no «falta algo»: con la clave
+          // puesta y sin remitente, un mensaje que siga nombrando la clave
+          // mandaría a buscar donde ya está resuelto.
+          verificar(
+            hayClave
+              ? !!aviso?.error?.includes('RESEND_DE')
+              : !!aviso?.error?.includes('RESEND_API_KEY'),
+            hayClave
+              ? 'y el motivo dice que falta el remitente, no la clave'
+              : 'y el motivo dice que falta la clave',
+            aviso?.error ?? '(sin motivo)'
+          );
+        }
         verificar(
           aviso?.destino === 'prueba@ejemplo.test',
           'y con la dirección a la que se habría mandado',
