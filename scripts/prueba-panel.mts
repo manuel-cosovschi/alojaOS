@@ -95,7 +95,7 @@ async function base<T = unknown>(path: string, init?: RequestInit): Promise<T> {
 }
 
 /**
- * Las siete funciones del panel que ESCRIBEN las reglas del complejo.
+ * Las once funciones del panel que ESCRIBEN los datos del complejo.
  *
  * Se las llama con un complejo inventado y con la clave de servicio, que no
  * tiene `auth.uid()`: `es_miembro()` devuelve false y todas levantan
@@ -112,6 +112,10 @@ const ESCRITURAS: Array<[string, Record<string, unknown>]> = [
   ['borrar_minimo', { p_minimo: INVENTADO }],
   ['guardar_bloque_fijo', { p_complejo: INVENTADO, p_check_in: '2099-01-01', p_check_out: '2099-01-02', p_etiqueta: null, p_bloque: null }],
   ['borrar_bloque_fijo', { p_bloque: INVENTADO }],
+  ['guardar_datos_del_complejo', { p_complejo: INVENTADO, p_nombre: 'x', p_whatsapp: null, p_transferir: null, p_localidad: null, p_email: null, p_porcentaje: null, p_horas: null }],
+  ['habilitar_reservas', { p_complejo: INVENTADO, p_habilitar: false }],
+  ['guardar_unidad', { p_complejo: INVENTADO, p_codigo: 'X', p_nombre: 'x', p_capacidad: 1, p_sugerencia: null, p_orden: null, p_activa: true, p_unidad: null }],
+  ['borrar_unidad', { p_unidad: INVENTADO }],
 ];
 
 /** Un día como lo escribe la pantalla: `11/02/27`. El `T12:00` evita que se corra uno. */
@@ -595,6 +599,75 @@ async function main() {
       'y el de los bloques que van enteros'
     );
 
+    // --- 8b. Los datos del complejo ---------------------------------------
+    // Hasta la 018 el panel decía «se carga en los datos del complejo» y esa
+    // pantalla no existía: mandaba al dueño a un lugar al que no podía ir. Lo
+    // que se comprueba acá es que ahora el aviso lleve a algo.
+    verificar(
+      await page.getByRole('heading', { name: 'Datos del complejo' }).isVisible(),
+      'el panel tiene la pantalla de los datos del complejo'
+    );
+
+    const [datos] = await base<
+      Array<{ slug: string; datos_transferencia: string | null; reservas_habilitadas: boolean }>
+    >(`complejos?id=eq.${complejoDuenio}&select=slug,datos_transferencia,reservas_habilitadas`);
+
+    // La dirección de la página se muestra y no se edita: es el link que el
+    // dueño les mandó a sus huéspedes.
+    verificar(
+      textoPanel.includes(datos.slug),
+      'y muestra la dirección de su página, que no se puede cambiar',
+      datos.slug
+    );
+    verificar(
+      (await page.locator(`input[value="${datos.slug}"]`).count()) === 0,
+      'y no la ofrece como campo editable'
+    );
+
+    // El aviso de «no cargaste dónde transferir» tiene que llevar a la pantalla
+    // de abajo, no nombrarla. Se comprueba que el ancla exista de verdad.
+    if (datos.datos_transferencia === null) {
+      const anclaOk = await page.evaluate(
+        (slug) => !!document.getElementById(`datos-${slug}`),
+        datos.slug
+      );
+      verificar(anclaOk, 'y el aviso de dónde transferir lleva a un ancla que existe');
+    } else {
+      verificar(
+        await page.evaluate((slug) => !!document.getElementById(`datos-${slug}`), datos.slug),
+        'y la pantalla de datos tiene su ancla, para que el aviso pueda llevar a ella'
+      );
+    }
+
+    verificar(
+      await page.getByRole('list', { name: 'Tus unidades', exact: true }).isVisible(),
+      'y lista las unidades del complejo'
+    );
+    verificar(
+      // `exact: true` porque `getByRole` matchea por subcadena, y sin eso
+      // «Unidades» agarraba también la lista «Unidades sin precio» de los
+      // precios. Es el segundo nombre ambiguo de esta batería; por eso la
+      // etiqueta de la lista pasó a ser «Tus unidades», que es lo que dice el
+      // título y no se parece a nada más.
+      (await page.getByRole('list', { name: 'Tus unidades', exact: true }).locator('li').count()) ===
+        unidadesDelComplejo.length,
+      'con todas las que hay en la base',
+      `pantalla ${await page.getByRole('list', { name: 'Tus unidades', exact: true }).locator('li').count()} · base ${unidadesDelComplejo.length}`
+    );
+
+    // El interruptor del alta pública dice el estado de verdad, no uno fijo.
+    verificar(
+      await page
+        .getByRole('heading', {
+          name: datos.reservas_habilitadas
+            ? 'Tu página toma reservas'
+            : 'Tu página no toma reservas',
+        })
+        .isVisible(),
+      'y dice si la página está tomando reservas, lo que dice la base',
+      String(datos.reservas_habilitadas)
+    );
+
     // --- 9. Que las escrituras del panel estén en la base -----------------
     // Esta sección no toca la pantalla: le pregunta a la base si las siete
     // funciones que escriben las reglas existen. Va en la batería que corre
@@ -619,13 +692,13 @@ async function main() {
 
     verificar(
       FALTANTES.length === 0,
-      'las siete funciones que escriben las reglas están aplicadas en la base',
+      'las once funciones que escriben están aplicadas en la base',
       FALTANTES.length === 0
         ? ''
         : `faltan ${FALTANTES.length}: ${FALTANTES.join(', ')}\n       ` +
           'El panel muestra todo y no guarda nada. Se arregla pegando las ' +
-          'migraciones 016 y 017 en el SQL Editor de Supabase; está explicado en ' +
-          'supabase/a_mano/02_las_escrituras_del_panel.sql'
+          'migraciones 016, 017 y 018 en el SQL Editor de Supabase, en ese orden; ' +
+          'está explicado en supabase/a_mano/02_las_escrituras_del_panel.sql'
     );
 
     // --- 10. Salir --------------------------------------------------------

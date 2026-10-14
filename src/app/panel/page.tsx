@@ -22,6 +22,7 @@ import { hoyISO } from '@/lib/fechas';
 import { Fechas } from '@/components/Fechas';
 import { Precios } from '@/components/Precios';
 import { ReglasDeTemporada } from '@/components/ReglasDeTemporada';
+import { DatosDelComplejo } from '@/components/DatosDelComplejo';
 
 /**
  * El panel del dueño.
@@ -161,6 +162,18 @@ export default async function Panel() {
                 <div className="mt-4">
                   <ReglasDeTemporada complejoId={complejo.id} reglas={reglas} />
                 </div>
+
+                {/* Y los datos del complejo al final, porque se tocan una vez
+                    al principio y después casi nunca. La dirección se arma con
+                    `direccionDelComplejo()`, la misma que el enlace de arriba:
+                    si el dominio cambia, cambia en un solo lugar. */}
+                <div className="mt-4" id={`datos-${complejo.slug}`}>
+                  <DatosDelComplejo
+                    complejo={complejo}
+                    unidades={unidades}
+                    direccion={direccionDelComplejo(complejo.slug)}
+                  />
+                </div>
               </section>
             ))}
           </>
@@ -190,13 +203,24 @@ function SinComplejos() {
  * huésped le ofrece escribir por WhatsApp. Pero es la clase de cosa que nadie
  * nota desde adentro, así que el panel la dice en vez de esperar que el dueño
  * se dé cuenta por una queja.
+ *
+ * Y hasta la 018 este aviso terminaba en «se carga en los datos del complejo»,
+ * una pantalla que no existía. O sea que mandaba al dueño a un lugar al que no
+ * podía ir y el aviso le quedaba ahí para siempre por más que lo leyera. Ahora
+ * la pantalla está abajo, y el enlace lleva hasta ella en vez de nombrarla.
  */
 function SinDatosBancarios({ slug }: { slug: string }) {
+  // El ancla lleva el slug porque un dueño puede tener más de un complejo en
+  // la misma página, y un ancla fija lo mandaría a los datos de otro.
   return (
     <div className="mb-3 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
       <strong>No cargaste dónde transferir.</strong> El huésped que reserve en{' '}
       <code>{slug}</code> va a ver la seña y no el alias ni el CBU, y le vamos a
-      ofrecer que te escriba por WhatsApp. Se carga en los datos del complejo.
+      ofrecer que te escriba por WhatsApp.{' '}
+      <a href={`#datos-${slug}`} className="font-semibold underline">
+        Cargalo acá
+      </a>
+      .
     </div>
   );
 }

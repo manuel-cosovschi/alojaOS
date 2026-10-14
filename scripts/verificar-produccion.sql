@@ -353,6 +353,47 @@ WITH esperado(orden, que, existe) AS (
        (SELECT count(*) = 1 FROM pg_constraint
          WHERE conname='periodos_sin_solape' AND contype='x')),
 
+  -- --- 018: los datos del complejo y sus unidades -------------------------
+  (110, 'las cuatro funciones de la 018 existen',
+       (SELECT count(DISTINCT proname) = 4 FROM pg_proc
+         WHERE pronamespace='public'::regnamespace
+           AND proname IN ('guardar_datos_del_complejo','habilitar_reservas',
+                           'guardar_unidad','borrar_unidad'))),
+  (111, 'y las cuatro las puede llamar el dueño y no un visitante',
+       has_function_privilege('authenticated',
+         'public.guardar_datos_del_complejo(uuid,text,text,text,text,text,numeric,smallint)', 'EXECUTE')
+        AND has_function_privilege('authenticated', 'public.habilitar_reservas(uuid,boolean)', 'EXECUTE')
+        AND has_function_privilege('authenticated',
+         'public.guardar_unidad(uuid,text,text,smallint,text,smallint,boolean,uuid)', 'EXECUTE')
+        AND has_function_privilege('authenticated', 'public.borrar_unidad(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon',
+         'public.guardar_datos_del_complejo(uuid,text,text,text,text,text,numeric,smallint)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.habilitar_reservas(uuid,boolean)', 'EXECUTE')
+        AND NOT has_function_privilege('anon',
+         'public.guardar_unidad(uuid,text,text,smallint,text,smallint,boolean,uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.borrar_unidad(uuid)', 'EXECUTE')),
+  (112, 'y las cuatro tienen search_path fijo',
+       (SELECT count(*) = 4 FROM pg_proc
+         WHERE pronamespace='public'::regnamespace
+           AND proname IN ('guardar_datos_del_complejo','habilitar_reservas',
+                           'guardar_unidad','borrar_unidad')
+           AND 'search_path=public' = ANY (coalesce(proconfig, ARRAY[]::text[])))),
+
+  -- Las dos reglas que hacen que `guardar_unidad()` y `borrar_unidad()` puedan
+  -- dejar que la base decida en vez de mirar antes de escribir.
+  (113, 'el slug sigue siendo inmutable',
+       (SELECT count(*) = 1 FROM pg_trigger
+         WHERE tgname='complejos_slug_inmutable' AND NOT tgisinternal)),
+  (114, 'una unidad con reservas no se puede borrar (ON DELETE RESTRICT)',
+       (SELECT count(*) = 1 FROM pg_constraint
+         WHERE conrelid='public.reservas'::regclass
+           AND confrelid='public.unidades'::regclass
+           AND contype='f' AND confdeltype='r')),
+  (115, 'y el código de unidad no se repite dentro de un complejo',
+       (SELECT count(*) >= 1 FROM pg_constraint
+         WHERE conrelid='public.unidades'::regclass AND contype='u'
+           AND pg_get_constraintdef(oid) ILIKE '%complejo_id%codigo%')),
+
   -- --- RLS en las tablas --------------------------------------------------
   (99, 'RLS prendido en todas las tablas de public',
        (SELECT count(*) = 0 FROM pg_class c

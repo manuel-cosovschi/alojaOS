@@ -508,6 +508,181 @@ function deSolape(r: Record<string, unknown>, que: string): string {
   return `${base} ${nombre} va del ${desde} al ${hasta}.`;
 }
 
+/**
+ * Guardar los datos del complejo.
+ *
+ * El campo que importa es `transferir`: sin él, el huésped reserva, ve cuánto
+ * tiene que señar y no sabe a dónde mandarlo. El panel ya avisaba de eso y
+ * mandaba a «los datos del complejo» —una pantalla que no existía—. Esto la
+ * cierra.
+ *
+ * El slug no está entre los campos y no es un olvido: lo prohíbe un trigger
+ * desde la 007, porque el dueño mandó el link de su página por WhatsApp a cada
+ * huésped.
+ *
+ * `null` en un campo opcional significa «no lo toques»; la cadena vacía,
+ * «borralo». Esa distinción la hace la base, no esto: acá se manda lo que el
+ * formulario tenga.
+ */
+export async function guardarDatosDelComplejo(
+  complejoId: string,
+  nombre: string,
+  whatsapp: string,
+  transferir: string,
+  localidad: string,
+  email: string,
+  porcentaje: number,
+  horas: number
+): Promise<Resultado> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('guardar_datos_del_complejo', {
+    p_complejo: complejoId,
+    p_nombre: nombre,
+    p_whatsapp: whatsapp,
+    p_transferir: transferir,
+    p_localidad: localidad,
+    p_email: email,
+    p_porcentaje: porcentaje,
+    p_horas: horas,
+  });
+
+  if (error) {
+    console.error('[guardarDatosDelComplejo] la base no dejó:', error.message);
+    return { ok: false, mensaje: mensajeDeError(error.message) };
+  }
+
+  const r = (data ?? {}) as Record<string, unknown>;
+  if (r.ok !== true) {
+    return {
+      ok: false,
+      mensaje: (typeof r.mensaje === 'string' && r.mensaje) || 'No pudimos guardarlo.',
+    };
+  }
+
+  // Lo que todavía falta y cuesta plata se dice acá, no sólo en el cartel de
+  // arriba: el que acaba de guardar es el único que lo puede arreglar ahora.
+  const falta: string[] = [];
+  if (r.falta_donde_transferir === true) falta.push('dónde transferir');
+  if (r.falta_whatsapp === true) falta.push('el WhatsApp');
+
+  return {
+    ok: true,
+    mensaje:
+      falta.length === 0
+        ? 'Guardado.'
+        : `Guardado, pero todavía falta ${falta.join(' y ')}. Sin eso el huésped reserva y no sabe cómo seguir.`,
+  };
+}
+
+/**
+ * Prender o apagar el alta pública.
+ *
+ * Aparte del formulario de datos porque es lo único de esa pantalla que cambia
+ * lo que puede hacer un desconocido ahora mismo: apretarlo sin querer mientras
+ * se corrige un teléfono sería dejar de vender sin saberlo.
+ */
+export async function habilitarReservas(
+  complejoId: string,
+  habilitar: boolean
+): Promise<Resultado> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('habilitar_reservas', {
+    p_complejo: complejoId,
+    p_habilitar: habilitar,
+  });
+
+  if (error) {
+    console.error('[habilitarReservas] la base no dejó:', error.message);
+    return { ok: false, mensaje: mensajeDeError(error.message) };
+  }
+
+  const r = (data ?? {}) as Record<string, unknown>;
+  if (r.ok !== true) return { ok: false, mensaje: 'No pudimos hacerlo.' };
+
+  if (r.habilitadas !== true) {
+    return { ok: true, mensaje: 'Listo: tu página ya no toma reservas.' };
+  }
+
+  // Prender con la casa a medio cargar es peor que no prender: la página queda
+  // abierta, no deja reservar nada igual, y el dueño cree que está vendiendo.
+  return {
+    ok: true,
+    mensaje:
+      r.pero_no_se_puede_reservar === true
+        ? 'Prendidas — pero ojo: todavía no se puede reservar nada. Mirá el aviso de precios y el de hasta cuándo se vende.'
+        : 'Prendidas. Tu página ya toma reservas.',
+  };
+}
+
+/** Guardar una unidad. `unidadId` null es un alta. */
+export async function guardarUnidad(
+  complejoId: string,
+  codigo: string,
+  nombre: string,
+  capacidad: number,
+  sugerencia: string,
+  orden: number | null,
+  activa: boolean,
+  unidadId: string | null
+): Promise<Resultado> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('guardar_unidad', {
+    p_complejo: complejoId,
+    p_codigo: codigo,
+    p_nombre: nombre,
+    p_capacidad: capacidad,
+    p_sugerencia: sugerencia,
+    p_orden: orden,
+    p_activa: activa,
+    p_unidad: unidadId,
+  });
+
+  if (error) {
+    console.error('[guardarUnidad] la base no dejó:', error.message);
+    return { ok: false, mensaje: mensajeDeError(error.message) };
+  }
+
+  const r = (data ?? {}) as Record<string, unknown>;
+  if (r.ok !== true) {
+    return {
+      ok: false,
+      mensaje: (typeof r.mensaje === 'string' && r.mensaje) || 'No pudimos guardarla.',
+    };
+  }
+
+  return {
+    ok: true,
+    mensaje: r.era_alta === true ? `Unidad ${r.codigo} agregada.` : 'Guardada.',
+  };
+}
+
+/**
+ * Borrar una unidad.
+ *
+ * La que tiene reservas no se borra: `reservas.unidad_id` es ON DELETE RESTRICT
+ * y borrarla tiraría el historial de la plata que entró. La base lo traduce a
+ * la frase que el dueño necesita —«sacala de circulación»—, que casi siempre es
+ * lo que quiso decir el que apretó borrar.
+ */
+export async function borrarUnidad(unidadId: string): Promise<Resultado> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('borrar_unidad', { p_unidad: unidadId });
+
+  if (error) {
+    console.error('[borrarUnidad] la base no dejó:', error.message);
+    return { ok: false, mensaje: mensajeDeError(error.message) };
+  }
+
+  const r = (data ?? {}) as Record<string, unknown>;
+  if (r.ok !== true) {
+    return {
+      ok: false,
+      mensaje: (typeof r.mensaje === 'string' && r.mensaje) || 'No pudimos borrarla.',
+    };
+  }
+  return { ok: true, mensaje: `${r.nombre} borrada.` };
+}
+
 /** Reabrir una fecha cerrada, por su id. */
 export async function reabrirFecha(bloqueoId: string): Promise<Resultado> {
   const supabase = await clienteConSesion();

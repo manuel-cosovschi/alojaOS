@@ -11,16 +11,20 @@
 -- ------------------------------------------------------------------
 -- Entró todo lo que lee, y nada de lo que escribe:
 --
---   periodos_del_complejo()      ✓ aplicada
---   salud_de_los_precios()       ✓ aplicada
---   reglas_del_calendario()      ✓ aplicada
---   guardar_periodo()            ✗ falta
---   borrar_periodo()             ✗ falta
---   guardar_config_calendario()  ✗ falta
---   guardar_minimo()             ✗ falta
---   borrar_minimo()              ✗ falta
---   guardar_bloque_fijo()        ✗ falta
---   borrar_bloque_fijo()         ✗ falta
+--   periodos_del_complejo()       ✓ aplicada
+--   salud_de_los_precios()        ✓ aplicada
+--   reglas_del_calendario()       ✓ aplicada
+--   guardar_periodo()             ✗ falta
+--   borrar_periodo()              ✗ falta
+--   guardar_config_calendario()   ✗ falta
+--   guardar_minimo()              ✗ falta
+--   borrar_minimo()               ✗ falta
+--   guardar_bloque_fijo()         ✗ falta
+--   borrar_bloque_fijo()          ✗ falta
+--   guardar_datos_del_complejo()  ✗ falta
+--   habilitar_reservas()          ✗ falta
+--   guardar_unidad()              ✗ falta
+--   borrar_unidad()               ✗ falta
 --
 -- El conector corta la llamada a los 60 segundos sin ejecutar nada cuando el
 -- SQL contiene sentencias que trata como destructivas —lo mismo que ya pasaba
@@ -30,6 +34,11 @@
 -- Que las de lectura sí entraran no es casualidad ni consuelo: el cronómetro de
 -- `ultima_fecha` —lo único de todo esto que avisa de una falla que llega sola—
 -- ya anda contra producción.
+--
+-- Y las tres aplicadas son EXACTAMENTE las del repo, no parecidas: comparé
+-- `md5(prosrc)` contra la base local del arnés y dan iguales. La herramienta
+-- para eso es `scripts/huellas-de-funciones.sql` y `./scripts/prueba-local.sh
+-- --huellas`.
 --
 -- Lo acoté hasta donde sirve: un `CREATE FUNCTION` con un `DELETE ... WHERE
 -- false` adentro entra; uno con un `UPDATE` no; `borrar_periodo()`, que sólo
@@ -46,13 +55,18 @@
 --
 --   1. supabase/migrations/016_precios_desde_el_panel.sql
 --   2. supabase/migrations/017_calendario_desde_el_panel.sql
+--   3. supabase/migrations/018_datos_del_complejo.sql
 --
--- Las dos son idempotentes (`CREATE OR REPLACE`), así que volver a aplicar lo
+-- Las tres son idempotentes (`CREATE OR REPLACE`), así que volver a aplicar lo
 -- que ya está no hace nada.
 --
 -- Después, correr `scripts/verificar-produccion.sql` en el mismo editor: tienen
--- que dar `ok` las filas 93 a 98 (la 016) y 100 a 105 (la 017). Hoy dicen FALTA
--- la 94, la 95, la 97, la 98, la 100, la 101 y la 103.
+-- que dar `ok` las filas 93 a 98 (la 016), 100 a 105 (la 017) y 110 a 115 (la
+-- 018).
+--
+-- Y `npm run prueba:panel`, que tiene una asercion sola para esto: le pregunta
+-- a la base si las once funciones que escriben existen, y hoy dice que faltan
+-- las once.
 --
 -- ------------------------------------------------------------------
 -- Para que esto no vuelva a pasar

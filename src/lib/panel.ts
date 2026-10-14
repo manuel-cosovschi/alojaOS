@@ -11,6 +11,7 @@ import { clienteConSesion } from '@/lib/supabase/sesion';
 
 export interface ComplejoDelDuenio {
   id: string;
+  /** Inmutable: un trigger lo prohíbe. Los links que el dueño mandó no se rompen. */
   slug: string;
   nombre: string;
   moneda: string;
@@ -18,6 +19,10 @@ export interface ComplejoDelDuenio {
   whatsapp: string | null;
   datos_transferencia: string | null;
   reservas_habilitadas: boolean;
+  localidad: string | null;
+  email: string | null;
+  porcentaje_sena: string;
+  horas_vencimiento_sena: number;
 }
 
 export interface SenaPendiente {
@@ -64,7 +69,9 @@ export async function misComplejos(): Promise<ComplejoDelDuenio[]> {
   const supabase = await clienteConSesion();
   const { data, error } = await supabase
     .from('complejos')
-    .select('id, slug, nombre, moneda, zona_horaria, whatsapp, datos_transferencia, reservas_habilitadas')
+    // En una sola línea aunque sea larga: Supabase infiere el tipo de la fila
+    // del literal de `select`, y partirlo con un `+` lo deja sin forma.
+    .select('id, slug, nombre, moneda, zona_horaria, whatsapp, datos_transferencia, reservas_habilitadas, localidad, email, porcentaje_sena, horas_vencimiento_sena')
     .order('nombre');
 
   if (error) {
@@ -148,6 +155,8 @@ export interface UnidadDelPanel {
   nombre: string;
   orden: number;
   activa: boolean;
+  capacidad_maxima: number;
+  sugerencia_ocupacion: string | null;
 }
 
 /** Las unidades del complejo, para elegir cuál cerrar. */
@@ -155,7 +164,7 @@ export async function unidadesDe(complejoId: string): Promise<UnidadDelPanel[]> 
   const supabase = await clienteConSesion();
   const { data, error } = await supabase
     .from('unidades')
-    .select('id, codigo, nombre, orden, activa')
+    .select('id, codigo, nombre, orden, activa, capacidad_maxima, sugerencia_ocupacion')
     .eq('complejo_id', complejoId)
     .order('orden');
 
