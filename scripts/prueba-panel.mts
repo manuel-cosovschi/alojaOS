@@ -94,6 +94,36 @@ async function base<T = unknown>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+/**
+ * Las siete funciones del panel que ESCRIBEN las reglas del complejo.
+ *
+ * Se las llama con un complejo inventado y con la clave de servicio, que no
+ * tiene `auth.uid()`: `es_miembro()` devuelve false y todas levantan
+ * `insufficient_privilege` antes de tocar una fila. O sea que este sondeo no
+ * puede escribir nada en producción — lo único que distingue es un 404 con
+ * PGRST202 («la función no existe») de cualquier otra respuesta.
+ */
+const INVENTADO = '00000000-0000-4000-8000-000000000000';
+const ESCRITURAS: Array<[string, Record<string, unknown>]> = [
+  ['guardar_periodo', { p_complejo: INVENTADO, p_desde: '2099-01-01', p_hasta: '2099-01-02', p_precios: {} }],
+  ['borrar_periodo', { p_periodo: INVENTADO }],
+  ['guardar_config_calendario', { p_complejo: INVENTADO, p_ultima: '2099-01-01', p_minimo: 1, p_primera: null }],
+  ['guardar_minimo', { p_complejo: INVENTADO, p_desde: '2099-01-01', p_hasta: '2099-01-02', p_noches: 1, p_dias: null, p_etiqueta: null, p_minimo: null }],
+  ['borrar_minimo', { p_minimo: INVENTADO }],
+  ['guardar_bloque_fijo', { p_complejo: INVENTADO, p_check_in: '2099-01-01', p_check_out: '2099-01-02', p_etiqueta: null, p_bloque: null }],
+  ['borrar_bloque_fijo', { p_bloque: INVENTADO }],
+];
+
+/** Un día como lo escribe la pantalla: `11/02/27`. El `T12:00` evita que se corra uno. */
+function diaCorto(iso: string): string {
+  return new Date(`${iso}T12:00:00Z`).toLocaleDateString('es-AR', {
+    timeZone: 'UTC',
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+  });
+}
+
 /** El huésped que usa esta batería. Por este nombre se limpia. */
 const HUESPED = 'Prueba de Panel';
 
@@ -488,7 +518,117 @@ async function main() {
       );
     }
 
-    // --- 8. Salir ---------------------------------------------------------
+    // --- 8. Precios y reglas de la temporada ------------------------------
+    // Lo que la pantalla tiene que hacer y sólo se ve desde el navegador: que
+    // los avisos que esta parte existe para dar —qué no se puede cotizar,
+    // cuántos días faltan para que la página deje de vender— estén EN la
+    // pantalla y no sólo en la respuesta de la base.
+    //
+    // Las expectativas salen de las TABLAS, leídas con la clave de servicio, y
+    // no de las funciones que esta prueba está probando. Preguntarle a
+    // `salud_de_los_precios()` si la pantalla muestra bien lo que dice
+    // `salud_de_los_precios()` no comprobaría nada. (Y además no se puede: con
+    // la clave de servicio no hay `auth.uid()`, así que `es_miembro()` dice no
+    // y la función levanta 403. Está bien que sea así.)
+    await page.goto(`${BASE}/panel`, { waitUntil: 'domcontentloaded' });
+
+    verificar(
+      await page.getByRole('heading', { name: 'Precios por período' }).isVisible(),
+      'el panel tiene la pantalla de precios'
+    );
+
+    const periodos = await base<Array<{ id: string; desde: string; hasta: string }>>(
+      `periodos_precio?complejo_id=eq.${complejoDuenio}&select=id,desde,hasta`
+    );
+    const unidadesDelComplejo = await base<Array<{ id: string }>>(
+      `unidades?complejo_id=eq.${complejoDuenio}&select=id`
+    );
+    const filasDePrecio = await base<Array<{ periodo_id: string }>>(
+      `precios_unidad?periodo_id=in.(${periodos.map((p) => p.id).join(',')})&select=periodo_id`
+    );
+
+    const enPantalla = page.getByRole('list', { name: 'Períodos de precio' });
+    verificar(
+      (await enPantalla.locator('li').count()) === periodos.length,
+      'y lista exactamente los períodos que hay en la base',
+      `pantalla ${await enPantalla.locator('li').count()} · base ${periodos.length}`
+    );
+
+    // El aviso de precios no puede quedarse callado: o dice que está todo
+    // cotizable, o dice qué no. Hasta hoy no decía nada, y una unidad sin
+    // precio quedaba invendible toda la temporada sin que nadie se enterara.
+    const faltanPrecios = filasDePrecio.length < periodos.length * unidadesDelComplejo.length;
+    const textoPanel = await page.locator('body').innerText();
+    verificar(
+      faltanPrecios
+        ? textoPanel.includes('no se puede') || textoPanel.includes('sin precio')
+        : textoPanel.includes('tienen precio') || textoPanel.includes('sin precio'),
+      'y la pantalla dice algo definido sobre los precios, nunca nada',
+      `${filasDePrecio.length} filas de precio para ${periodos.length} períodos × ${unidadesDelComplejo.length} unidades`
+    );
+
+    // El cronómetro de `ultima_fecha`: la única falla de este sistema que llega
+    // sola, sin que nadie haga nada. La pantalla tiene que decir el día.
+    verificar(
+      await page.getByRole('heading', { name: 'Hasta cuándo se puede reservar' }).isVisible(),
+      'y tiene la pantalla de las reglas de la temporada'
+    );
+
+    const [config] = await base<Array<{ ultima_fecha: string; minimo_noches: number }>>(
+      `config_calendario?complejo_id=eq.${complejoDuenio}&select=ultima_fecha,minimo_noches`
+    );
+    verificar(
+      config
+        ? textoPanel.includes(diaCorto(config.ultima_fecha))
+        : textoPanel.includes('No cargaste hasta cuándo se puede reservar'),
+      'y dice el día hasta el que se puede reservar, el que está en la base',
+      config ? `${config.ultima_fecha} → ${diaCorto(config.ultima_fecha)}` : 'sin config'
+    );
+    verificar(
+      await page.getByRole('list', { name: 'Mínimos por tramo' }).isVisible()
+        || textoPanel.includes('rige el mínimo general'),
+      'y el estado de los mínimos por tramo, cargados o no'
+    );
+    verificar(
+      await page.getByRole('list', { name: 'Bloques que van enteros' }).isVisible()
+        || textoPanel.includes('se venden de a una'),
+      'y el de los bloques que van enteros'
+    );
+
+    // --- 9. Que las escrituras del panel estén en la base -----------------
+    // Esta sección no toca la pantalla: le pregunta a la base si las siete
+    // funciones que escriben las reglas existen. Va en la batería que corre
+    // contra producción porque es donde faltaron.
+    //
+    // No se saltea ni se da por buena: si falta alguna, falla, y dice cuál y
+    // qué hacer. Una batería que pasa con el panel a medio aplicar sería una
+    // batería que contesta que está bien sin estar bien.
+    const FALTANTES: string[] = [];
+    for (const [fn, args] of ESCRITURAS) {
+      const res = await fetch(`${URL_SUPA}/rest/v1/rpc/${fn}`, {
+        method: 'POST',
+        headers: cab,
+        body: JSON.stringify(args),
+      });
+      // Un 404 con PGRST202 es «la función no existe». Cualquier otra respuesta
+      // —incluido el 403 de `es_miembro()`— quiere decir que sí existe, que es
+      // lo único que esta prueba comprueba. Lo que la función HACE está probado
+      // en `prueba-base.sql`, contra un Postgres de verdad.
+      if (res.status === 404 && (await res.text()).includes('PGRST202')) FALTANTES.push(fn);
+    }
+
+    verificar(
+      FALTANTES.length === 0,
+      'las siete funciones que escriben las reglas están aplicadas en la base',
+      FALTANTES.length === 0
+        ? ''
+        : `faltan ${FALTANTES.length}: ${FALTANTES.join(', ')}\n       ` +
+          'El panel muestra todo y no guarda nada. Se arregla pegando las ' +
+          'migraciones 016 y 017 en el SQL Editor de Supabase; está explicado en ' +
+          'supabase/a_mano/02_las_escrituras_del_panel.sql'
+    );
+
+    // --- 10. Salir --------------------------------------------------------
     await page.goto(`${BASE}/salir`, { waitUntil: 'domcontentloaded' });
     verificar(page.url().includes('/login'), 'salir vuelve al login', page.url());
     await page.goto(`${BASE}/panel`, { waitUntil: 'domcontentloaded' });
