@@ -129,3 +129,56 @@ export async function avisosQueNoSalieron(complejoId: string): Promise<AvisoQueN
   }
   return (data ?? []) as AvisoQueNoSalio[];
 }
+
+export interface Bloqueo {
+  id: string;
+  unidad_id: string;
+  unidad_codigo: string;
+  unidad_nombre: string;
+  check_in: string;
+  check_out: string;
+  noches: number;
+  motivo: string | null;
+  creado_el: string;
+}
+
+export interface UnidadDelPanel {
+  id: string;
+  codigo: string;
+  nombre: string;
+  orden: number;
+}
+
+/** Las unidades del complejo, para elegir cuál cerrar. */
+export async function unidadesDe(complejoId: string): Promise<UnidadDelPanel[]> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase
+    .from('unidades')
+    .select('id, codigo, nombre, orden')
+    .eq('complejo_id', complejoId)
+    .order('orden');
+
+  if (error) {
+    console.error('[unidadesDe] la base devolvió un error:', error.message);
+    return [];
+  }
+  return (data ?? []) as UnidadDelPanel[];
+}
+
+/**
+ * Las fechas que el dueño tiene cerradas, de hoy en adelante.
+ *
+ * Lista aparte de las reservas a propósito: en la cabeza del dueño son dos
+ * cosas distintas, y mezclarlas lo haría buscar entre reservas de gente para
+ * encontrar la semana que cerró él.
+ */
+export async function bloqueosDe(complejoId: string): Promise<Bloqueo[]> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('bloqueos_del_complejo', { p_complejo: complejoId });
+
+  if (error) {
+    console.error('[bloqueosDe] la base devolvió un error:', error.message);
+    return [];
+  }
+  return (data ?? []) as Bloqueo[];
+}

@@ -195,6 +195,19 @@ echo
 # contesta FALTA sobre algo que está, y eso manda a arreglar lo que no está roto.
 #
 # Acá, con todas las migraciones aplicadas, tiene que decir `ok` en todo.
+# Los números de fila del verificador no se pueden repetir.
+#
+# No es cosmético: la salida del verificador es una lista de «NN: qué falta», y
+# dos filas con el mismo número mandan a mirar la que no es. Ya pasó con el
+# `lpad(n, 2)` de prueba-base.sql, que recortaba y hacía que la 103, la 104 y la
+# 105 se imprimieran todas como «10».
+REPETIDOS=$(grep -oP '^  \(\K\d+(?=, )' "$RAIZ/scripts/verificar-produccion.sql" | sort | uniq -d)
+if [ -n "$REPETIDOS" ]; then
+  echo "   ✗ verificar-produccion.sql tiene números de fila repetidos:"
+  echo "$REPETIDOS" | sed 's/^/     /'
+  exit 1
+fi
+
 echo "→ el verificador de producción, contra esta base (tiene que dar todo ok)"
 VERIF="$TMP/verificacion.txt"
 if ! $PSQL -d alojaos -f "$RAIZ/scripts/verificar-produccion.sql" > "$VERIF" 2>&1; then

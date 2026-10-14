@@ -1049,6 +1049,145 @@ BEGIN
 END $$;
 
 -- ============================================
+-- 15. Cerrar y reabrir fechas
+-- ============================================
+-- `desbloquear()` existía desde la 009 y `bloquear()` no: el dueño podía
+-- deshacer algo que no podía hacer. Lo que se comprueba acá es el par entero,
+-- y sobre todo las dos cosas que lo hacen distinto de «escribir una fila»:
+-- que no se pueda cerrar lo que ya está vendido, y que reabrir diga cuántas
+-- reabrió en vez de contestar «listo».
+DO $$
+DECLARE
+  v JSONB;
+  v_complejo UUID := 'aaaaaaaa-0000-0000-0000-000000000001';
+  v_unidad   UUID := 'bbbbbbbb-0000-0000-0000-000000000001';
+  v_vecina   UUID := 'bbbbbbbb-0000-0000-0000-000000000009';
+  v_bloqueo  UUID;
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+
+  -- Cerrar unas noches libres.
+  v := public.bloquear(v_complejo, v_unidad, '2027-06-10', '2027-06-14', 'La pintamos');
+  PERFORM pg_temp.verificar('el dueño puede cerrar fechas libres',
+    (v->>'ok')::boolean, v::text);
+  v_bloqueo := (v->>'id')::uuid;
+
+  -- Y esas noches quedan ocupadas de verdad, no sólo marcadas.
+  PERFORM pg_temp.verificar('y esas noches quedan ocupadas',
+    EXISTS (
+      SELECT 1 FROM public.noches_ocupadas(v_complejo, v_unidad)
+       WHERE check_in = '2027-06-10'
+    ));
+
+  -- Cerrar lo mismo otra vez tiene que chocar, no duplicar.
+  v := public.bloquear(v_complejo, v_unidad, '2027-06-11', '2027-06-13', 'otra vez');
+  PERFORM pg_temp.verificar('cerrar algo ya cerrado no crea un segundo bloqueo',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'ocupada', v::text);
+  PERFORM pg_temp.verificar('y el mensaje dice que ya estaban cerradas',
+    v->>'mensaje' LIKE '%cerradas%', v::text);
+
+  -- Lo que importa: no se puede cerrar una noche VENDIDA.
+  INSERT INTO reservas (complejo_id, unidad_id, check_in, check_out, estado,
+                        origen, huesped_nombre, huesped_telefono, personas, importe)
+  VALUES (v_complejo, v_unidad, '2027-07-01', '2027-07-05', 'CONFIRMED', 'web',
+          'Huesped Vendido', '5491100002222', 2, 300000);
+
+  v := public.bloquear(v_complejo, v_unidad, '2027-07-02', '2027-07-04', 'la quiero yo');
+  PERFORM pg_temp.verificar('no se puede cerrar una noche ya vendida',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'ocupada', v::text);
+  -- Y dice QUIÉN la tiene, que es lo que el dueño necesita para decidir.
+  PERFORM pg_temp.verificar('y le dice al dueño quién la tiene',
+    v->'choca_con'->>'huesped' = 'Huesped Vendido', v::text);
+  PERFORM pg_temp.verificar('con el estado de esa reserva',
+    v->'choca_con'->>'estado' = 'CONFIRMED', v::text);
+
+  -- La unidad de otro complejo no se puede cerrar desde acá.
+  v := public.bloquear(v_complejo, v_vecina, '2027-06-10', '2027-06-14', NULL);
+  PERFORM pg_temp.verificar('no se puede cerrar una unidad de otro complejo',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'unidad_ajena', v::text);
+
+  -- Fechas al revés.
+  v := public.bloquear(v_complejo, v_unidad, '2027-06-20', '2027-06-20', NULL);
+  PERFORM pg_temp.verificar('la salida tiene que ser posterior a la entrada',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'fechas_invalidas', v::text);
+
+  -- La lista de lo cerrado.
+  PERFORM pg_temp.verificar('el bloqueo aparece en la lista de fechas cerradas',
+    EXISTS (SELECT 1 FROM public.bloqueos_del_complejo(v_complejo) WHERE id = v_bloqueo));
+  PERFORM pg_temp.verificar('con su motivo y sus noches',
+    EXISTS (
+      SELECT 1 FROM public.bloqueos_del_complejo(v_complejo)
+       WHERE id = v_bloqueo AND motivo = 'La pintamos' AND noches = 4
+    ));
+  -- Y la reserva vendida NO aparece ahí: son dos listas distintas.
+  PERFORM pg_temp.verificar('y la reserva de un huésped no aparece entre los bloqueos',
+    NOT EXISTS (
+      SELECT 1 FROM public.bloqueos_del_complejo(v_complejo) WHERE check_in = '2027-07-01'
+    ));
+
+  -- Reabrir.
+  v := public.reabrir(v_bloqueo);
+  PERFORM pg_temp.verificar('reabrir una fecha cerrada funciona', (v->>'ok')::boolean, v::text);
+  PERFORM pg_temp.verificar('y las noches quedan libres de verdad',
+    NOT EXISTS (
+      SELECT 1 FROM public.noches_ocupadas(v_complejo, v_unidad)
+       WHERE check_in = '2027-06-10'
+    ));
+  PERFORM pg_temp.verificar('y sale de la lista de fechas cerradas',
+    NOT EXISTS (SELECT 1 FROM public.bloqueos_del_complejo(v_complejo) WHERE id = v_bloqueo));
+
+  -- Reabrir dos veces lo dice en vez de fingir.
+  v := public.reabrir(v_bloqueo);
+  PERFORM pg_temp.verificar('reabrir dos veces lo dice en vez de contestar «listo»',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'no_es_un_bloqueo', v::text);
+
+  -- Y el botón de reabrir no puede tocar la reserva de un huésped.
+  v := public.reabrir((SELECT id FROM reservas
+                        WHERE unidad_id = v_unidad AND huesped_nombre = 'Huesped Vendido'));
+  PERFORM pg_temp.verificar('reabrir no puede cancelar la reserva de un huésped',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'no_es_un_bloqueo', v::text);
+  PERFORM pg_temp.verificar('y esa reserva sigue confirmada',
+    (SELECT estado FROM reservas
+      WHERE unidad_id = v_unidad AND huesped_nombre = 'Huesped Vendido') = 'CONFIRMED');
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+END $$;
+
+-- Y el vecino no puede cerrar ni reabrir nada ajeno.
+DO $$
+DECLARE
+  v_ok BOOLEAN := false;
+  v_bloqueo UUID;
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+  v_bloqueo := (public.bloquear('aaaaaaaa-0000-0000-0000-000000000001',
+                                'bbbbbbbb-0000-0000-0000-000000000002',
+                                '2027-08-01', '2027-08-05', 'mía')->>'id')::uuid;
+
+  PERFORM set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+
+  BEGIN
+    PERFORM public.bloquear('aaaaaaaa-0000-0000-0000-000000000001',
+                            'bbbbbbbb-0000-0000-0000-000000000002',
+                            '2027-09-01', '2027-09-05', 'colado');
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('el vecino no puede cerrar fechas de otro complejo', v_ok);
+
+  v_ok := false;
+  BEGIN
+    PERFORM public.reabrir(v_bloqueo);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('ni reabrir las de otro', v_ok);
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+
+  PERFORM pg_temp.verificar('y el bloqueo ajeno sigue en pie',
+    (SELECT estado FROM reservas WHERE id = v_bloqueo) = 'BLOCKED');
+END $$;
+
+-- ============================================
 -- Resultado
 -- ============================================
 \echo ''

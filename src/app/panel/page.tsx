@@ -1,6 +1,13 @@
 import { redirect } from 'next/navigation';
 import { usuarioActual } from '@/lib/supabase/sesion';
-import { misComplejos, senasPendientes, saludDelVencimiento, avisosQueNoSalieron } from '@/lib/panel';
+import {
+  misComplejos,
+  senasPendientes,
+  saludDelVencimiento,
+  avisosQueNoSalieron,
+  unidadesDe,
+  bloqueosDe,
+} from '@/lib/panel';
 import { Senas } from '@/components/Senas';
 import { SaludDelReloj } from '@/components/SaludDelReloj';
 import { SaludDelComprobante } from '@/components/SaludDelComprobante';
@@ -8,6 +15,8 @@ import { AvisosQueNoSalieron } from '@/components/AvisosQueNoSalieron';
 import { saludDelComprobante } from '@/lib/salud';
 import { salir } from '@/actions/sesion';
 import { direccionDelComplejo } from '@/lib/tenant';
+import { hoyISO } from '@/lib/fechas';
+import { Fechas } from '@/components/Fechas';
 
 /**
  * El panel del dueño.
@@ -40,8 +49,13 @@ export default async function Panel() {
   // esperarlas en fila haría que un dueño con tres complejos espere el triple.
   const porComplejo = await Promise.all(
     complejos.map(async (c) => {
-      const [senas, avisos] = await Promise.all([senasPendientes(c.id), avisosQueNoSalieron(c.id)]);
-      return { complejo: c, senas, avisos };
+      const [senas, avisos, unidades, bloqueos] = await Promise.all([
+        senasPendientes(c.id),
+        avisosQueNoSalieron(c.id),
+        unidadesDe(c.id),
+        bloqueosDe(c.id),
+      ]);
+      return { complejo: c, senas, avisos, unidades, bloqueos };
     })
   );
 
@@ -69,7 +83,7 @@ export default async function Panel() {
             <SaludDelComprobante salud={saludComprobante} />
             {salud && <SaludDelReloj salud={salud} />}
 
-            {porComplejo.map(({ complejo, senas, avisos }) => (
+            {porComplejo.map(({ complejo, senas, avisos, unidades, bloqueos }) => (
               <section key={complejo.id}>
                 <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
                   <h2 className="text-lg font-semibold">{complejo.nombre}</h2>
@@ -105,6 +119,18 @@ export default async function Panel() {
                   moneda={complejo.moneda}
                   zonaHoraria={complejo.zona_horaria}
                 />
+
+                {/* Las fechas cerradas van después de las señas: una seña tiene
+                    plazo y esto no. Lo urgente primero. */}
+                <div className="mt-4">
+                  <Fechas
+                    complejoId={complejo.id}
+                    unidades={unidades}
+                    bloqueos={bloqueos}
+                    hoy={hoyISO(complejo.zona_horaria)}
+                    zonaHoraria={complejo.zona_horaria}
+                  />
+                </div>
               </section>
             ))}
           </>

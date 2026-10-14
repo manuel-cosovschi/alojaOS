@@ -148,3 +148,77 @@ function motivoLegible(r: Record<string, unknown>): string {
       return 'No pudimos hacerlo.';
   }
 }
+
+/**
+ * Cerrar fechas.
+ *
+ * Igual que aprobar y rechazar: el permiso lo comprueba `bloquear()` adentro,
+ * con `es_miembro()`. Y el choque con una reserva vendida lo detecta la
+ * restricción de exclusión al escribir, no una lectura previa.
+ */
+export async function cerrarFechas(
+  complejoId: string,
+  unidadId: string,
+  desde: string,
+  hasta: string,
+  motivo: string
+): Promise<Resultado> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('bloquear', {
+    p_complejo: complejoId,
+    p_unidad: unidadId,
+    p_desde: desde,
+    p_hasta: hasta,
+    p_motivo: motivo.trim() || null,
+  });
+
+  if (error) {
+    console.error('[cerrarFechas] la base no dejó:', error.message);
+    return { ok: false, mensaje: mensajeDeError(error.message) };
+  }
+
+  const r = (data ?? {}) as Record<string, unknown>;
+  if (r.ok !== true) {
+    // Cuando choca, la base dice con qué. Para el dueño ese dato es la mitad
+    // de la respuesta: si la cabaña está vendida esa semana, o llama al
+    // huésped o cambia de fecha.
+    const choca = r.choca_con as Record<string, unknown> | undefined;
+    const base = typeof r.mensaje === 'string' ? r.mensaje : 'No pudimos cerrar esas fechas.';
+    if (choca && typeof choca.check_in === 'string') {
+      const quien =
+        choca.estado === 'BLOCKED'
+          ? `ya está cerrado${choca.motivo ? ` («${choca.motivo}»)` : ''}`
+          : `lo tiene ${choca.huesped ?? 'un huésped'}`;
+      return {
+        ok: false,
+        mensaje: `${base} Del ${choca.check_in} al ${choca.check_out} ${quien}.`,
+      };
+    }
+    return { ok: false, mensaje: base };
+  }
+
+  return { ok: true, mensaje: 'Listo, esas fechas quedaron cerradas.' };
+}
+
+/** Reabrir una fecha cerrada, por su id. */
+export async function reabrirFecha(bloqueoId: string): Promise<Resultado> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('reabrir', { p_bloqueo: bloqueoId });
+
+  if (error) {
+    console.error('[reabrirFecha] la base no dejó:', error.message);
+    return { ok: false, mensaje: mensajeDeError(error.message) };
+  }
+
+  const r = (data ?? {}) as Record<string, unknown>;
+  if (r.ok !== true) {
+    return {
+      ok: false,
+      mensaje:
+        (typeof r.mensaje === 'string' && r.mensaje) ||
+        (r.motivo === 'no_existe' ? 'Esa fecha ya no está cerrada.' : 'No pudimos reabrirla.'),
+    };
+  }
+
+  return { ok: true, mensaje: 'Reabierta. Esas noches vuelven a estar a la venta.' };
+}

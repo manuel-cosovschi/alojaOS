@@ -222,6 +222,23 @@ WITH esperado(orden, que, existe) AS (
         AND has_function_privilege('authenticated', 'public.avisos_que_no_salieron(uuid)', 'EXECUTE')
         AND NOT has_function_privilege('anon', 'public.avisos_que_no_salieron(uuid)', 'EXECUTE')),
 
+  -- --- Cerrar y reabrir fechas (015) --------------------------------------
+  (87, 'bloquear() existe y es sólo del dueño logueado',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='bloquear' AND pronamespace='public'::regnamespace)
+        AND has_function_privilege('authenticated', 'public.bloquear(uuid,uuid,date,date,text)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.bloquear(uuid,uuid,date,date,text)', 'EXECUTE')),
+  (88, 'reabrir() existe y es sólo del dueño logueado',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='reabrir' AND pronamespace='public'::regnamespace)
+        AND has_function_privilege('authenticated', 'public.reabrir(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.reabrir(uuid)', 'EXECUTE')),
+  (89, 'bloqueos_del_complejo() existe y es sólo del dueño logueado',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='bloqueos_del_complejo' AND pronamespace='public'::regnamespace)
+        AND has_function_privilege('authenticated', 'public.bloqueos_del_complejo(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.bloqueos_del_complejo(uuid)', 'EXECUTE')),
+
   -- --- El reloj del vencimiento -------------------------------------------
   -- La 013 programa un job de pg_cron para que una seña venza sin que nadie
   -- entre a la página. Estas tres filas se escriben condicionadas a que pg_cron

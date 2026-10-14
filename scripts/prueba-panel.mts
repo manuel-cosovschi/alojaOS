@@ -102,7 +102,14 @@ async function limpiar(): Promise<number> {
     `reservas?huesped_nombre=eq.${encodeURIComponent(HUESPED)}`,
     { method: 'DELETE', headers: { Prefer: 'return=representation' } }
   );
-  return borradas.length;
+  // Y los bloqueos que deja el caso de las fechas cerradas. Sin esto, la
+  // segunda corrida choca contra el bloqueo de la primera y reporta que cerrar
+  // fechas no funciona, cuando lo que pasa es que funcionó demasiado bien.
+  const bloqueos = await base<unknown[]>(
+    `reservas?motivo_estado=eq.${encodeURIComponent('La prueba la cerró')}`,
+    { method: 'DELETE', headers: { Prefer: 'return=representation' } }
+  );
+  return borradas.length + bloqueos.length;
 }
 
 /**
@@ -235,6 +242,10 @@ async function main() {
       );
       await otra.close();
     }
+
+    const [{ id: complejoDuenio }] = await base<Array<{ id: string }>>(
+      `complejos?slug=eq.${SLUG}&select=id`
+    );
 
     // --- 3. Confirmar confirma de verdad ----------------------------------
     // Apuntando a LA fila de esta prueba, dentro de LA lista que corresponde.
@@ -371,7 +382,113 @@ async function main() {
       );
     }
 
-    // --- 7. Salir ---------------------------------------------------------
+    // --- 7. Cerrar y reabrir fechas ---------------------------------------
+    // Lo que el dueño hace más seguido después de aprobar una seña. Hasta hoy
+    // `desbloquear()` existía y `bloquear()` no: podía deshacer algo que no
+    // podía hacer.
+    {
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const panelFechas = page.locator('div').filter({ hasText: /^Fechas cerradas/ }).first();
+
+      // El complejo de ejemplo ya tiene una semana cerrada —«La usa la
+      // familia»— sembrada. Que aparezca es mejor prueba que una lista vacía:
+      // demuestra que la lista lee de la base.
+      //
+      // Y es el par exacto de una aserción de la batería del huésped, que
+      // comprueba que la página pública NO publica ese mismo texto. El mismo
+      // dato: invisible para el que reserva, visible para el dueño.
+      verificar(
+        (await page.getByText('La usa la familia').count()) > 0,
+        'el panel muestra la fecha que el complejo ya tenía cerrada'
+      );
+
+      await page.getByRole('button', { name: 'Cerrar fechas' }).click();
+      await page.waitForTimeout(150);
+
+      // Un rango libre: 2027-06-10 al 14, lejos de todo lo que usan los otros
+      // casos de esta batería.
+      await page.getByLabel('Desde (primera noche)').fill('2027-06-10');
+      await page.getByLabel('Hasta (día de salida)').fill('2027-06-14');
+      await page.getByLabel(/Por qué/).fill('La prueba la cerró');
+
+      verificar(
+        (await page.getByText('Vas a cerrar').count()) > 0,
+        'y dice cuántas noches va a cerrar antes de apretar'
+      );
+
+      await page.getByRole('button', { name: 'Cerrar esas fechas' }).click();
+      await page.waitForTimeout(2500);
+
+      const bloqueos = await base<Array<{ id: string; estado: string; motivo_estado: string }>>(
+        `reservas?estado=eq.BLOCKED&check_in=eq.2027-06-10&select=id,estado,motivo_estado`
+      );
+      verificar(bloqueos.length === 1, 'cerrar fechas deja UN bloqueo en la base', `${bloqueos.length}`);
+      verificar(
+        bloqueos[0]?.motivo_estado === 'La prueba la cerró',
+        'con el motivo que escribió el dueño',
+        bloqueos[0]?.motivo_estado
+      );
+
+      // Y esas noches figuran ocupadas para el huésped.
+      const ocupadas = await base<Array<{ check_in: string }>>('rpc/noches_ocupadas', {
+        method: 'POST',
+        body: JSON.stringify({ p_complejo: complejoDuenio }),
+      });
+      verificar(
+        ocupadas.some((o) => o.check_in === '2027-06-10'),
+        'y esas noches quedan ocupadas para quien entra a reservar'
+      );
+
+      verificar(
+        (await page.getByRole('list', { name: 'Fechas cerradas' }).count()) > 0,
+        'y aparece en la lista de fechas cerradas'
+      );
+
+      // Lo que importa: cerrar algo VENDIDO tiene que rebotar y decir con qué.
+      await page.getByRole('button', { name: 'Cerrar fechas' }).click();
+      await page.waitForTimeout(150);
+      await page.getByLabel('Desde (primera noche)').fill('2027-06-11');
+      await page.getByLabel('Hasta (día de salida)').fill('2027-06-13');
+      await page.getByRole('button', { name: 'Cerrar esas fechas' }).click();
+      await page.waitForTimeout(2000);
+
+      const textoError = await page.locator('body').innerText();
+      verificar(
+        textoError.includes('ya están cerradas'),
+        'cerrar algo ya cerrado lo dice, no crea un segundo bloqueo'
+      );
+      verificar(
+        (await base<unknown[]>('reservas?estado=eq.BLOCKED&check_in=eq.2027-06-11&select=id')).length === 0,
+        'y no quedó nada escrito de ese intento'
+      );
+
+      // Reabrir.
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const lista = page.getByRole('list', { name: 'Fechas cerradas' });
+      await lista.locator('li').filter({ hasText: 'La prueba la cerró' })
+        .getByRole('button', { name: 'Reabrir' }).click();
+      await page.waitForTimeout(2500);
+
+      const despues = await base<Array<{ estado: string }>>(
+        `reservas?id=eq.${bloqueos[0].id}&select=estado`
+      );
+      verificar(
+        despues[0]?.estado === 'CANCELLED',
+        'reabrir deja el bloqueo CANCELLED en la base',
+        despues[0]?.estado
+      );
+
+      const ocupadasDespues = await base<Array<{ check_in: string }>>('rpc/noches_ocupadas', {
+        method: 'POST',
+        body: JSON.stringify({ p_complejo: complejoDuenio }),
+      });
+      verificar(
+        !ocupadasDespues.some((o) => o.check_in === '2027-06-10'),
+        'y las noches vuelven a estar a la venta de verdad, no sólo en la pantalla'
+      );
+    }
+
+    // --- 8. Salir ---------------------------------------------------------
     await page.goto(`${BASE}/salir`, { waitUntil: 'domcontentloaded' });
     verificar(page.url().includes('/login'), 'salir vuelve al login', page.url());
     await page.goto(`${BASE}/panel`, { waitUntil: 'domcontentloaded' });
