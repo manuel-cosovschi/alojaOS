@@ -75,10 +75,20 @@ async function main() {
       comercial.includes('nunca dos veces la misma noche'),
       'la página comercial se sirve en el dominio principal'
     );
-    verificar(
-      comercial.includes('Qué todavía no hace'),
-      'y dice lo que el producto todavía no hace'
-    );
+    // Esto buscaba la sección «Qué todavía no hace», que se sacó: era una lista
+    // de limitaciones en el medio de la página de venta y el pedido fue que no
+    // estuviera. Lo que no se podía perder es que las dos limitaciones que
+    // igual pregunta todo el mundo sigan contestadas en algún lado, así que
+    // ahora se busca eso: las dos respuestas, donde quedaron.
+    //
+    // No se busca el título de una sección sino el contenido, justamente para
+    // que la prueba sobreviva a que lo muevan de lugar otra vez.
+    for (const [texto, que] of [
+      ['Booking', 'que la página siga diciendo que no se conecta con los portales'],
+      ['tarjeta', 'y que la seña se transfiere, que no se cobra con tarjeta'],
+    ] as const) {
+      verificar(comercial.includes(texto), que, `no aparece «${texto}» en ninguna parte`);
+    }
 
     // --- El panel sin sesión ------------------------------------------------
     await page.goto(`${BASE}/panel`, { waitUntil: 'domcontentloaded' });
