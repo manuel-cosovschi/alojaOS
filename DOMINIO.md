@@ -26,6 +26,22 @@ Comprado en GoDaddy el 14/10/2026, con el DNS manejado desde Vercel.
   El dominio en Resend es `bb667265-2081-4c4d-add7-8931705b5d33`, región
   `sa-east-1` (São Paulo), que es la más cerca de los destinatarios argentinos.
 
+## Verificado contra el dominio en vivo
+
+```
+https://alojaos.shop                     → la página comercial
+https://cabanias-del-sol.alojaos.shop    → la página del complejo
+https://www.alojaos.shop                 → 308 a https://alojaos.shop/
+ALOJAOS_BASE=https://alojaos.shop npm run prueba:despliegue   → 12 de 12
+```
+
+Durante el redespliegue, la primera aserción de esa batería —la que comprueba
+que la página abra sin estar logueado en Vercel— dio HTTP 503 dos veces
+seguidas, mientras `curl` diez veces y `fetch` de Node daban 200 en el mismo
+momento. Dejó de reproducirse una vez que el despliegue terminó de propagar. No
+tengo la causa probada; lo que sí está comprobado es que no se reproduce más y
+que la batería da 12 de 12.
+
 ## Lo que falta
 
 - Que **Resend termine de verificar** el dominio. Los cuatro registros ya
