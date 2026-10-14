@@ -300,6 +300,35 @@ async function main() {
     const fila = senas.locator('li').filter({ hasText: HUESPED });
     verificar(await fila.count() === 1, 'la seña de esta prueba está en la lista una sola vez',
       `encontré ${await fila.count()}`);
+
+    // --- El número que el dueño compara contra su homebanking --------------
+    // La fila decía `Seña: $ 200.000` cuando la seña era $ 100.000: mostraba
+    // `importe`, que es el TOTAL de la estadía. El dueño que mirara la
+    // transferencia de verdad iba a ver la mitad de lo que el panel pedía, y
+    // podía rechazar una reserva buena.
+    //
+    // El porcentaje sale de la base y no de un `50` escrito acá: el dueño lo
+    // puede cambiar desde su panel, y una prueba con el número clavado
+    // empezaría a fallar el día que lo cambie, por una razón que no es un bug.
+    {
+      const [c] = await base<Array<{ porcentaje_sena: string }>>(
+        `complejos?slug=eq.${SLUG}&select=porcentaje_sena`
+      );
+      const esperada = Math.round((200000 * Number(c.porcentaje_sena)) / 100);
+      const miles = (n: number) => n.toLocaleString('es-AR');
+      const texto = (await fila.innerText()).replace(/\s+/g, ' ');
+      verificar(
+        new RegExp(`Seña:\\s*\\$\\s*${miles(esperada).replace('.', '\\.')}\\b`).test(texto),
+        `la fila muestra la seña (${miles(esperada)}) y no el total (200.000)`,
+        texto.slice(0, 160)
+      );
+      verificar(
+        texto.includes(miles(200000)),
+        'y el total al lado, para que se vean los dos números',
+        texto.slice(0, 160)
+      );
+    }
+
     await fila.getByRole('button', { name: 'Confirmar la reserva' }).click();
     await page.waitForTimeout(2500);
 

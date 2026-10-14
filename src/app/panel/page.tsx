@@ -132,6 +132,7 @@ export default async function Panel() {
                   senas={senas}
                   moneda={complejo.moneda}
                   zonaHoraria={complejo.zona_horaria}
+                  porcentajeSena={Number(complejo.porcentaje_sena)}
                 />
 
                 {/* Las fechas cerradas van después de las señas: una seña tiene

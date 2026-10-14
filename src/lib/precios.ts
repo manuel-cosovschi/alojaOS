@@ -86,10 +86,27 @@ export function cotizar(
   return {
     noches: dias.length,
     total,
-    sena: Math.round((total * porcentajeSena) / 100),
+    sena: senaDe(total, porcentajeSena),
     precioMin,
     precioMax,
   };
+}
+
+/**
+ * La seña de una estadía.
+ *
+ * Una función de una línea, exportada, porque el número tiene que ser el mismo
+ * en los tres lugares donde aparece: la pantalla del huésped, el mail que le
+ * llega, y el panel del dueño cuando revisa si la transferencia que entró es la
+ * que corresponde. Tres redondeos distintos para el mismo monto es una discusión
+ * con un cliente por cincuenta pesos.
+ *
+ * La base hace esta misma cuenta en `avisos_pendientes()` (migración 014), y
+ * `round()` de Postgres redondea igual que `Math.round` para los medios
+ * positivos, que es el único caso que se da acá.
+ */
+export function senaDe(total: number, porcentajeSena: number): number {
+  return Math.round((total * porcentajeSena) / 100);
 }
 
 /** Qué noche de la estadía no tiene precio. Para decírselo al dueño, no al huésped. */

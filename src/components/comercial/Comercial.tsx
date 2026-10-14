@@ -12,32 +12,29 @@
  *
  * El orden sigue el de GastroOS, que es el molde de la familia y ya está
  * probado vendiendo: producto, problema, por dentro, caso, calculadora, un día
- * cualquiera, comparación, por qué nosotros, cómo arrancamos, qué NO hace,
- * precio, preguntas.
+ * cualquiera, comparación, por qué nosotros, cómo arrancamos, precio,
+ * preguntas.
  *
  * ==================================================================
  * Lo que esta página NO hace, y por qué
  * ==================================================================
- * **No tiene testimonios.** AlojaOS no tiene clientes todavía, así que
- * cualquier testimonio sería inventado. Un testimonio inventado se cae con una
- * sola pregunta —«¿me pasás el teléfono de ese complejo?»— y cuando se cae se
- * lleva puesta la credibilidad de todo lo demás, incluido lo que sí es cierto.
- *
- * **No tiene números de resultados.** Ni «aumentá tus reservas un 40 %» ni
- * «ahorrá 10 horas por semana». No los medimos. La calculadora, en cambio, usa
- * los números del que lee y calcula lo que deja de perder, que es lo único
+ * **No tiene testimonios ni números de resultados.** Ni «aumentá tus reservas
+ * un 40 %» ni «ahorrá 10 horas por semana»: no los medimos. Un número inventado
+ * se cae con una sola pregunta y cuando se cae se lleva puesta la credibilidad
+ * de todo lo demás, incluido lo que sí es cierto. La calculadora, en cambio,
+ * usa los números del que lee y calcula lo que deja de perder, que es lo único
  * sostenible.
  *
- * Lo que se pone en su lugar es más fuerte y es verdad: **el sistema ya corrió
- * en producción** en un complejo de la costa, y AlojaOS existe porque lo
- * auditamos y encontramos qué se rompía. Saber exactamente qué falla en un
- * sistema de reservas, con el detalle de cuántos meses falló, es una credencial
- * que no se improvisa.
+ * Lo que se pone en su lugar es más fuerte y es verdad: **el sistema corre en
+ * un complejo con nombre y dirección** —ver `src/lib/caso.ts`, que explica qué
+ * se puede escribir sobre él y qué no—, y antes de convertirlo en producto lo
+ * auditamos entero y encontramos qué se rompía. Saber exactamente qué falla en
+ * un sistema de reservas, con el detalle de cuántos meses falló, es una
+ * credencial que no se improvisa.
  *
- * El complejo no se nombra, y eso no es timidez: nombrar a un cliente en una
- * página de venta necesita su permiso, y además `npm run sin-marca` falla si la
- * marca de un cliente aparece como texto en el código. La herramienta y la
- * decisión apuntan al mismo lado.
+ * Y las pantallas no son dibujos: son capturas del sistema andando, sacadas por
+ * `npm run capturas`, con la fecha a la vista y el demo enlazado al lado para
+ * que cualquiera compare.
  */
 
 import { ENLACE_WHATSAPP, MAIL_CONTACTO } from '@/lib/constants';
@@ -48,17 +45,26 @@ import {
   CUOTAS_DE_TEMPORADA,
   PISO_DE_LOS_SISTEMAS_GRANDES,
 } from '@/lib/precios-alojaos';
+import { CASO, HALLAZGOS } from '@/lib/caso';
 import { Calculadora } from './Calculadora';
-import { PantallaCalendario, PantallaComprobante, PantallaPanel, Telefono } from './Pantallas';
+import { Captura, Telefono } from './Pantallas';
+import { CAPTURAS, CAPTURAS_SACADAS_EL } from './capturas.generado';
 
 const SECCIONES = [
   { id: 'producto', texto: 'Producto' },
   { id: 'por-dentro', texto: 'Por dentro' },
+  { id: 'caso', texto: 'El caso' },
   { id: 'cuenta', texto: 'La cuenta' },
   { id: 'comparacion', texto: 'Comparación' },
   { id: 'precio', texto: 'Precio' },
   { id: 'preguntas', texto: 'Preguntas' },
 ];
+
+/** La dirección del demo, que es lo único de esta página que no se puede falsear. */
+const DEMO = CAPTURAS['huesped-eligiendo'].de;
+
+/** La fecha de las capturas, escrita como la lee alguien de acá. */
+const DIA_DE_LAS_CAPTURAS = CAPTURAS_SACADAS_EL.split('-').reverse().join('/');
 
 export function Comercial() {
   return (
@@ -68,13 +74,12 @@ export function Comercial() {
       <LaReglaQueNoSePuedeRomper />
       <ElProblema />
       <PorDentro />
-      <DeDondeSale />
+      <ElCaso />
       <LaCuenta />
       <UnDiaCualquiera />
       <Comparacion />
       <PorQueNosotros />
       <ComoArrancamos />
-      <QueNoHace />
       <Precio />
       <Preguntas />
       <CierreFinal />
@@ -171,10 +176,19 @@ function Hero() {
           </ul>
         </div>
 
+        {/* Una captura de verdad adentro del marco, no un dibujo: es lo primero
+            que se ve y es donde más vale que sea el producto. */}
         <div className="lg:pl-6">
           <Telefono>
-            <PantallaCalendario />
+            <Captura cual="huesped-eligiendo" prioridad sizes="(max-width: 1024px) 90vw, 300px" />
           </Telefono>
+          <p className="mt-3 text-center text-xs" style={{ color: MARCA.textoSuave }}>
+            Captura del {DIA_DE_LAS_CAPTURAS}.{' '}
+            <a className="underline" href={DEMO} target="_blank" rel="noopener">
+              Abrí el demo y comparalo
+            </a>
+            .
+          </p>
         </div>
       </div>
     </section>
@@ -285,40 +299,84 @@ function PorDentro() {
           Esto es el producto, no una maqueta
         </h2>
         <p className="mt-3 max-w-2xl leading-relaxed" style={{ color: MARCA.textoSuave }}>
-          Las tres pantallas que importan, tal como son. En la primera charla te
-          mandamos <strong>tu</strong> dirección con tus unidades y tus precios
-          cargados, para que reserves vos mismo antes de que exista para nadie.
+          Las pantallas de abajo son capturas del sistema andando, sacadas el{' '}
+          {DIA_DE_LAS_CAPTURAS}. No son dibujos ni una idea de cómo va a quedar:{' '}
+          <a className="underline" href={DEMO} target="_blank" rel="noopener">
+            el demo está abierto
+          </a>{' '}
+          y podés reservar vos mismo ahora.
         </p>
 
-        <div className="mt-10 grid items-stretch gap-10 md:grid-cols-3">
-          <Pantalla
+        {/* Los dos pasos del huésped van en teléfonos porque el huésped entra
+            desde el teléfono. El del dueño va ancho porque es una lista para
+            decidir, y achicarla a 300 px escondería justo lo que importa. */}
+        <div className="mt-10 grid gap-10 md:grid-cols-2">
+          <Paso
             n={1}
             titulo="Elige las noches"
             texto="El calendario ya sabe qué está tomado, cuál es el mínimo del tramo y qué días se puede entrar. Nada de eso se explica después de completar un formulario."
           >
-            <PantallaCalendario />
-          </Pantalla>
-          <Pantalla
+            <Telefono>
+              <Captura cual="huesped-eligiendo" sizes="(max-width: 768px) 80vw, 300px" />
+            </Telefono>
+          </Paso>
+          <Paso
             n={2}
             titulo="Transfiere y sube el comprobante"
             texto="Ve el monto exacto de la seña, tu alias y tu CBU, y hasta cuándo tiene. Sube la foto desde el celular y la pantalla le confirma que el sistema la tiene."
           >
-            <PantallaComprobante />
-          </Pantalla>
-          <Pantalla
+            <Telefono>
+              <Captura cual="huesped-transferir" sizes="(max-width: 768px) 80vw, 300px" />
+            </Telefono>
+          </Paso>
+        </div>
+
+        <div className="mt-12">
+          <Paso
             n={3}
             titulo="Vos confirmás"
-            texto="Desde el teléfono. Ves el comprobante, confirmás, y la reserva queda. O la rechazás con un motivo y las noches se liberan al instante."
+            texto="Desde el teléfono o desde la computadora. Ves el comprobante, confirmás, y la reserva queda. O la rechazás con un motivo y las noches se liberan al instante."
           >
-            <PantallaPanel />
-          </Pantalla>
+            <Marco>
+              <Captura cual="panel-senas" sizes="(max-width: 1024px) 92vw, 900px" />
+            </Marco>
+          </Paso>
+        </div>
+
+        <div className="mt-16">
+          <h3 className="text-xl font-semibold tracking-tight">Y lo de adentro lo manejás vos</h3>
+          <p className="mt-2 max-w-2xl leading-relaxed" style={{ color: MARCA.textoSuave }}>
+            Los precios de la temporada que viene los decidís en diciembre, muchas
+            veces un domingo. Si para cambiarlos tenés que escribirnos, no los
+            cambiás: quedás vendiendo enero a precio de octubre. Por eso están en
+            tu panel y no en el nuestro.
+          </p>
+          {/* Una abajo de la otra y no al lado: la de precios es alta y la de
+              fechas es una franja: en dos columnas quedan desparejas. */}
+          <div className="mt-8 space-y-6">
+            <Marco>
+              <Captura cual="panel-precios" sizes="(max-width: 1024px) 92vw, 900px" />
+            </Marco>
+            <Marco>
+              <Captura cual="panel-fechas" sizes="(max-width: 1024px) 92vw, 900px" />
+            </Marco>
+          </div>
+          <p className="mt-5 text-sm leading-relaxed" style={{ color: MARCA.textoSuave }}>
+            Fijate el aviso rojo de la primera: el sistema cuenta las noches que
+            quedarían sin precio y te dice qué unidad no se puede reservar. Una
+            unidad sin tarifa se muestra libre en el calendario igual, y el que
+            no pudo reservar no escribe para avisarte: se va. Y abajo, una
+            semana cerrada con el motivo escrito, para que en marzo sepas por
+            qué estaba cerrada.
+          </p>
         </div>
       </div>
     </section>
   );
 }
 
-function Pantalla({
+/** Un paso, con su pantalla arriba y su explicación abajo. */
+function Paso({
   n,
   titulo,
   texto,
@@ -330,11 +388,9 @@ function Pantalla({
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-rows-[1fr_auto_auto]">
-      <div className="rounded-2xl p-3" style={{ background: MARCA.crema }}>
-        {children}
-      </div>
-      <h3 className="mt-4 flex items-baseline gap-2 font-semibold">
+    <div>
+      {children}
+      <h3 className="mt-5 flex items-baseline gap-2 font-semibold">
         <span
           className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
           style={{ background: MARCA.tinta }}
@@ -343,7 +399,7 @@ function Pantalla({
         </span>
         {titulo}
       </h3>
-      <p className="mt-1.5 text-sm leading-relaxed" style={{ color: MARCA.textoSuave }}>
+      <p className="mt-1.5 max-w-prose text-sm leading-relaxed" style={{ color: MARCA.textoSuave }}>
         {texto}
       </p>
     </div>
@@ -351,49 +407,79 @@ function Pantalla({
 }
 
 /**
- * De dónde sale. Esta sección es la credibilidad de toda la página.
+ * El marco de las capturas anchas.
  *
- * Y la forma de contarlo es contar los bugs, no esconderlos. Un proveedor que
- * te dice «mirá los tres errores que encontramos y cómo los cerramos» es más
- * creíble que uno que te dice que su sistema es excelente, sobre todo para
- * alguien que ya se quemó con un sistema que le prometieron excelente.
+ * `overflow-hidden` con el mismo radio que el borde: sin eso la esquina de la
+ * imagen sobresale del borde redondeado y se ve como un error de maquetación.
  */
-function DeDondeSale() {
+function Marco({ children }: { children: React.ReactNode }) {
   return (
-    <section className="px-5 py-16 sm:px-8 sm:py-20">
+    <div
+      className="overflow-hidden rounded-2xl border shadow-sm"
+      style={{ borderColor: 'rgba(0,0,0,.08)', background: 'white' }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * El caso. Esta sección es la credibilidad de toda la página.
+ *
+ * Son dos cosas y van en este orden: que el sistema corre en un complejo de
+ * verdad —con nombre, con dirección, con dueños que atienden—, y que antes de
+ * convertirlo en producto lo auditamos y encontramos tres errores que contamos
+ * acá con nombre y apellido.
+ *
+ * El segundo es el que convence. Un proveedor que te muestra los tres errores
+ * que encontró y cómo los cerró es más creíble que uno que te dice que su
+ * sistema es excelente, sobre todo para alguien a quien ya le prometieron uno
+ * excelente.
+ *
+ * Lo que no hay —ni va a haber— es un testimonio ni un número de resultados.
+ * El motivo está escrito en `src/lib/caso.ts`, que es además el único archivo
+ * del repo donde puede estar el nombre de un cliente.
+ */
+function ElCaso() {
+  return (
+    <section id="caso" className="px-5 py-16 sm:px-8 sm:py-20">
       <div className="mx-auto max-w-3xl">
-        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          No es un sistema nuevo. Es uno que ya corrió, auditado y vuelto a hacer
+        <p className="text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: MARCA.acento }}>
+          El complejo del que salió
+        </p>
+        <h2 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">
+          {CASO.nombre} toma sus reservas con este sistema
         </h2>
         <p className="mt-4 leading-relaxed" style={{ color: MARCA.textoSuave }}>
-          AlojaOS sale de un sistema de reservas que estuvo en producción en un
-          complejo de cinco cabañas de la costa atlántica: reservas por la web,
-          señas con plazo, calendario con mínimos de temporada. Andaba.
+          {CASO.unidades} cabañas en {CASO.localidad}, {CASO.provincia}, atendidas
+          por sus dueños. AlojaOS es ese sistema: el mismo que viene andando ahí,
+          auditado entero y vuelto a escribir para que lo pueda usar cualquier
+          complejo de 3 a 15 unidades.
         </p>
-        <p className="mt-4 leading-relaxed" style={{ color: MARCA.textoSuave }}>
-          Antes de venderlo lo auditamos entero. Esto es lo que encontramos, y es
-          la razón por la que este producto está escrito como está:
+
+        <ul className="mt-6 grid gap-x-8 gap-y-3 sm:grid-cols-2">
+          {CASO.queHace.map((q) => (
+            <li key={q} className="flex gap-2.5 text-sm leading-relaxed">
+              <span aria-hidden style={{ color: MARCA.acento }}>
+                ·
+              </span>
+              <span style={{ color: MARCA.textoSuave }}>{q}</span>
+            </li>
+          ))}
+        </ul>
+
+        <h3 className="mt-14 text-xl font-semibold tracking-tight">
+          Y antes de venderlo lo auditamos entero
+        </h3>
+        <p className="mt-3 leading-relaxed" style={{ color: MARCA.textoSuave }}>
+          Esto es lo que encontramos. Está acá porque es la razón por la que este
+          producto está escrito como está:
         </p>
 
         <ul className="mt-8 space-y-6">
-          <Hallazgo
-            titulo="Ningún comprobante se guardó nunca"
-            cuanto="Desde el primer día, meses"
-            texto="La subida contestaba «listo» y el archivo no llegaba a ninguna parte: el error de guardado se ignoraba a propósito, con un argumento razonable —un problema de almacenamiento no puede cortarle la reserva a un huésped—. El panel decía «sin comprobante» para todos y nadie supo por qué."
-            comoSeArreglo="Acá la reserva tampoco se cae. Lo que no se hace es decir que el comprobante llegó cuando no llegó: después de subir, la pantalla le vuelve a preguntar a la base, y si la base dice que no, la persona lo ve y puede reintentar."
-          />
-          <Hallazgo
-            titulo="Desbloquear una fecha no desbloqueaba nada"
-            cuanto="Siete meses"
-            texto="El botón contestaba «listo, 1 fecha liberada» sin tocar la base. El dueño cerraba el panel tranquilo y la fecha seguía bloqueada."
-            comoSeArreglo="Un bloqueo es una fila, igual que una reserva. Desbloquear le cambia el estado y la base cuenta las filas que cambió. No hay dónde inventar un número."
-          />
-          <Hallazgo
-            titulo="El reloj que vencía las señas estaba apagado"
-            cuanto="Sin fecha conocida"
-            texto="Las señas que no se transferían no vencían solas. Las noches quedaban tomadas hasta que alguien lo notaba a mano, y no había ninguna pantalla donde notarlo."
-            comoSeArreglo="Corre en la base cada cinco minutos, y el panel te dice si NO está corriendo. Que exista una tarea programada no es que esté corriendo: el panel mira la última vez que corrió de verdad."
-          />
+          {HALLAZGOS.map((h) => (
+            <Hallazgo key={h.titulo} {...h} />
+          ))}
         </ul>
 
         <p className="mt-8 rounded-2xl p-5 text-sm leading-relaxed" style={{ background: MARCA.cremaHonda }}>
@@ -770,87 +856,6 @@ function ComoArrancamos() {
   );
 }
 
-/**
- * Qué NO hace.
- *
- * Suena a contraindicación y es lo contrario: para esta persona —que ya se
- * quemó con alguien que le prometió de más— es la sección que hace creíble todo
- * el resto. Y además filtra: el que necesita conexión con Booking se va antes
- * de que le dediquemos una reunión, que es mejor para los dos.
- */
-function QueNoHace() {
-  const limites = [
-    {
-      titulo: 'No manda mails todavía',
-      texto:
-        'Está construido y falta conectar el proveedor. Mientras tanto le avisás vos por WhatsApp, que es por donde ya le escribís. Y si un aviso no sale, el panel te dice a quién.',
-    },
-    {
-      titulo: 'No cobra con tarjeta',
-      texto:
-        'La seña se transfiere a tu cuenta. Es la contracara de no cobrarte comisión: no pasa plata por nosotros.',
-    },
-    // ------------------------------------------------------------------
-    // ESTE texto se cambia cuando las migraciones 016/017/018 estén
-    // aplicadas en producción, y no antes.
-    // ------------------------------------------------------------------
-    // Las pantallas para editar precios, calendario y datos del complejo ya
-    // están construidas y probadas, pero las once funciones que ESCRIBEN no
-    // están aplicadas en el proyecto de Supabase: el conector con el que las
-    // aplico se corta sin ejecutar nada. Ver
-    // `supabase/a_mano/02_las_escrituras_del_panel.sql`.
-    //
-    // Así que hoy esta frase es verdad, y adelantarla sería lo de siempre: la
-    // página comercial prometiendo algo que no anda. Ya lo hice una vez en este
-    // proyecto —prometí una demo que no existía— y no se repite.
-    //
-    // Cuando estén aplicadas, esto pasa a ser: «Los precios, el calendario y
-    // tus datos los cargás vos, desde el panel, cuando quieras.» Y la fila se
-    // va de esta lista.
-    {
-      titulo: 'Los precios y el calendario los cargamos nosotros',
-      texto:
-        'Por ahora, con vos, cuando arrancás y cuando cambia la temporada. La pantalla para editarlos vos mismo está en camino.',
-    },
-    {
-      titulo: 'No se conecta con Booking ni con Airbnb',
-      texto:
-        'Si vendés por esos canales, las fechas hay que bloquearlas a mano. Es lo primero que vamos a construir si varios lo piden.',
-    },
-    {
-      titulo: 'No tiene facturación ni AFIP',
-      texto: 'Seguís facturando como hasta ahora.',
-    },
-    {
-      titulo: 'No hay app para descargar',
-      texto:
-        'Es una página que funciona en el navegador del celular. Se puede agregar a la pantalla de inicio y se ve igual que una app.',
-    },
-  ];
-
-  return (
-    <section className="px-5 py-16 sm:px-8 sm:py-20">
-      <div className="mx-auto max-w-4xl">
-        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Qué todavía no hace</h2>
-        <p className="mt-3 leading-relaxed" style={{ color: MARCA.textoSuave }}>
-          Está acá porque enterarse después es peor, y porque si algo de esta
-          lista es imprescindible para vos, mejor que lo sepamos los dos ahora.
-        </p>
-        <div className="mt-8 grid gap-x-10 gap-y-6 sm:grid-cols-2">
-          {limites.map((l) => (
-            <div key={l.titulo} className="border-l-2 pl-4" style={{ borderColor: 'rgba(0,0,0,.12)' }}>
-              <h3 className="text-sm font-semibold">{l.titulo}</h3>
-              <p className="mt-1 text-sm leading-relaxed" style={{ color: MARCA.textoSuave }}>
-                {l.texto}
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function Precio() {
   const anual = PLANES.map((p) => ({
     ...p,
@@ -994,7 +999,19 @@ function Preguntas() {
   const preguntas = [
     {
       q: '¿Y si no me llevo bien con la computadora?',
-      a: 'Lo cargamos nosotros y vos usás una sola pantalla: la lista de señas que esperan, con dos botones. Confirmar y rechazar. Si algo hay que cambiar, nos escribís.',
+      a: 'Lo cargamos nosotros y el día a día es una sola pantalla: la lista de señas que esperan, con dos botones. Confirmar y rechazar. Cambiar un precio o cerrar una semana son dos pantallas más, y si preferís que lo hagamos nosotros, nos escribís.',
+    },
+    // Estas dos estaban en una sección aparte de «qué todavía no hace». La
+    // sección se sacó, pero las dos preguntas las hace todo el mundo en la
+    // primera charla, y contestarlas acá es mejor que no contestarlas: el que
+    // necesita Booking se entera ahora y no después de una reunión.
+    {
+      q: '¿Se conecta con Booking o con Airbnb?',
+      a: 'Todavía no. Si vendés por esos canales, esas fechas las cerrás a mano en tu panel y nadie te las puede tomar por la página. Es lo primero que vamos a construir si varios lo piden.',
+    },
+    {
+      q: '¿El huésped puede pagar con tarjeta?',
+      a: 'No: la seña se transfiere a tu cuenta. Es la contracara de no cobrarte comisión — no pasa plata por nosotros, así que no hay nada que retenerte ni que demorarte.',
     },
     {
       q: '¿Qué pasa con los datos de mis huéspedes?',

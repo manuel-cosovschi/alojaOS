@@ -19,6 +19,19 @@
   --fuente-cuerpo: ui-sans-serif, system-ui, sans-serif;
 }
 
+/*
+ * El menú de la página comercial queda fijo arriba, así que un salto a `#caso`
+ * deja la sección pegada al borde y el título tapado por el menú. Sin esto, el
+ * que hace clic en «El caso» aterriza y no ve el título del caso: parece que el
+ * enlace no anduvo.
+ *
+ * Va en `html` y no en cada sección porque es una regla del documento, y así
+ * vale también para los anclajes del panel.
+ */
+html {
+  scroll-padding-top: 4.5rem;
+}
+
 body {
   background: var(--marca-fondo);
   color: var(--marca-texto);

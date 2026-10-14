@@ -24,7 +24,8 @@
     "prueba:comercial": "tsx scripts/prueba-comercial.mts",
     "alta": "tsx scripts/alta-de-cliente.mts",
     "verificar": "tsx scripts/verificar-produccion.mts",
-    "huellas": "tsx scripts/huellas.mts"
+    "huellas": "tsx scripts/huellas.mts",
+    "capturas": "tsx scripts/capturas.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

@@ -255,6 +255,27 @@ async function main() {
     'y aparece la seña, con el porcentaje del complejo'
   );
 
+  // --- Las noches del medio se VEN elegidas --------------------------------
+  // No alcanza con que la clase esté puesta. `bg-marca-principal/15` estuvo en
+  // producción pintando `rgba(0,0,0,0)`: Tailwind no le puede meter el alfa a
+  // un color que es `var(--marca-principal)` a secas, así que la clase salía en
+  // el HTML y no pintaba nada. El huésped elegía siete noches y veía marcadas
+  // dos, las dos puntas.
+  //
+  // Por eso esto le pregunta al navegador por el color de verdad y no por la
+  // clase: la clase estaba bien, el color no.
+  {
+    const fondo = await dia(page, '19 de enero de 2027').evaluate(
+      (n) => getComputedStyle(n as HTMLElement).backgroundColor
+    );
+    const transparente = /^rgba\(0,\s*0,\s*0,\s*0\)$/.test(fondo) || fondo === 'transparent';
+    verificar(
+      !transparente,
+      'una noche del medio de la estadía se ve elegida',
+      `el 19 tiene la clase de «dentro del rango» y el navegador lo pinta ${fondo}`
+    );
+  }
+
   // Un lunes de temporada alta: el día de entrada no está permitido.
   await page.getByRole('button', { name: 'elegir otras fechas' }).click();
   const lunes = dia(page, '18 de enero de 2027');

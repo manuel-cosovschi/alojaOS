@@ -1,0 +1,33 @@
+{
+  "sacadas_el": "2026-10-14T22:56:13.606Z",
+  "commit": "3d38895e99b1716d83ddb1d1b8c1c0f845fdc3f8",
+  "huella_interfaz": "f46a0c8cc2ffb1913f2195fac236cf20",
+  "base": "http://alojaos.test:3000",
+  "capturas": [
+    {
+      "archivo": "huesped-eligiendo.png",
+      "de": "http://cabanias-del-sol.alojaos.test:3000/",
+      "que": "El calendario, las noches elegidas y la seña"
+    },
+    {
+      "archivo": "huesped-transferir.png",
+      "de": "http://cabanias-del-sol.alojaos.test:3000/",
+      "que": "El plazo de la seña, el alias y el CBU para transferir"
+    },
+    {
+      "archivo": "panel-senas.png",
+      "de": "http://alojaos.test:3000/panel",
+      "que": "Las señas esperando, con su comprobante y su plazo"
+    },
+    {
+      "archivo": "panel-precios.png",
+      "de": "http://alojaos.test:3000/panel",
+      "que": "Los precios por temporada, cargados desde el panel"
+    },
+    {
+      "archivo": "panel-fechas.png",
+      "de": "http://alojaos.test:3000/panel",
+      "que": "Las fechas cerradas a mano, y el aviso de qué falta"
+    }
+  ]
+}

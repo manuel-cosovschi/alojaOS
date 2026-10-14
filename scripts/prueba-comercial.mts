@@ -21,6 +21,8 @@
  */
 
 import { chromium } from 'playwright';
+import { readFileSync } from 'node:fs';
+import { huellaDeLaInterfaz } from './huella-interfaz.mjs';
 
 const BASE = (process.env.ALOJAOS_BASE ?? 'http://alojaos.test:3000').replace(/\/$/, '');
 
@@ -30,8 +32,41 @@ const verificar = (ok: boolean, nombre: string, detalle = '') => {
   console.log(`${ok ? 'OK    ' : 'FALLA '} ${nombre}${ok || !detalle ? '' : `\n       ${detalle}`}`);
 };
 
+/**
+ * ¿Las capturas que muestra la página son del producto de hoy?
+ *
+ * Es la única parte de una página de venta que puede quedar vieja sin que nadie
+ * lo note: el producto cambia, la imagen se queda, y la página sigue mostrando
+ * algo que ya no existe. Nada falla, nadie se entera, y es exactamente la clase
+ * de falla que este proyecto persigue, sólo que en forma de PNG.
+ *
+ * Así que se compara el commit en el que se sacaron contra lo que se tocó
+ * después. Se mira `src/app` y `src/components` salvo la carpeta comercial:
+ * cambiar el texto de venta no envejece una captura del producto, y si contara,
+ * la prueba fallaría en cada retoque y se aprendería a ignorarla.
+ */
+function capturasAlDia() {
+  let manifiesto: { huella_interfaz?: string; sacadas_el?: string };
+  try {
+    manifiesto = JSON.parse(readFileSync('public/capturas/manifiesto.json', 'utf8'));
+  } catch {
+    verificar(false, 'las capturas tienen manifiesto', 'falta public/capturas/manifiesto.json: corré `npm run capturas`');
+    return;
+  }
+
+  const ahora = huellaDeLaInterfaz();
+  verificar(
+    manifiesto.huella_interfaz === ahora,
+    `las capturas son del producto de hoy (sacadas el ${manifiesto.sacadas_el?.slice(0, 10) ?? '?'})`,
+    `la interfaz cambió desde que se sacaron: ${manifiesto.huella_interfaz?.slice(0, 8) ?? 'sin huella'} → ${ahora.slice(0, 8)}.\n` +
+      '       Corré `npm run capturas` y mirá si cambió alguna imagen.'
+  );
+}
+
 async function main() {
   console.log(`\nLa página comercial, contra ${BASE}\n`);
+
+  capturasAlDia();
 
   const navegador = await chromium.launch({
     args: ['--host-resolver-rules=MAP alojaos.test 127.0.0.1, MAP *.alojaos.test 127.0.0.1'],

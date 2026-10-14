@@ -8,8 +8,7 @@ import { Comercial } from '@/components/comercial/Comercial';
  * La raíz.
  *
  * En un subdominio (`sucomplejo.alojaos.shop`) es la página de reservas de ese
- * complejo. En el dominio principal va a ser la página comercial de AlojaOS,
- * que todavía no está.
+ * complejo. En el dominio principal es la página comercial de AlojaOS.
  *
  * No se cachea: muestra qué noches están ocupadas, y una página de
  * disponibilidad vieja le ofrece a alguien una fecha que ya se tomó.
