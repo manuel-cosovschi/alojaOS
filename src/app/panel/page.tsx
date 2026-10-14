@@ -10,6 +10,7 @@ import {
   periodosDe,
   saludDeLosPrecios,
   reglasDe,
+  tipografiasDisponibles,
 } from '@/lib/panel';
 import { Senas } from '@/components/Senas';
 import { SaludDelReloj } from '@/components/SaludDelReloj';
@@ -23,6 +24,7 @@ import { Fechas } from '@/components/Fechas';
 import { Precios } from '@/components/Precios';
 import { ReglasDeTemporada } from '@/components/ReglasDeTemporada';
 import { DatosDelComplejo } from '@/components/DatosDelComplejo';
+import { Marca } from '@/components/Marca';
 
 /**
  * El panel del dueño.
@@ -46,9 +48,12 @@ export default async function Panel() {
   const complejos = await misComplejos();
   // Las dos en paralelo: una pregunta a la base y la otra al almacenamiento, y
   // no dependen entre sí.
-  const [salud, saludComprobante] = await Promise.all([
+  // Las tres en paralelo. La lista de tipografías es igual para todos los
+  // complejos, así que se pide una vez y no una por complejo.
+  const [salud, saludComprobante, tipografias] = await Promise.all([
     saludDelVencimiento(),
     saludDelComprobante(),
+    tipografiasDisponibles(),
   ]);
 
   // Las señas de cada complejo, en paralelo: son consultas independientes y
@@ -173,6 +178,13 @@ export default async function Panel() {
                     unidades={unidades}
                     direccion={direccionDelComplejo(complejo.slug)}
                   />
+                </div>
+
+                {/* La marca al final: se toca una vez, al principio. Y tiene
+                    vista previa porque dar un campo de color sin forma de ver
+                    el resultado es peor que no darlo. */}
+                <div className="mt-4">
+                  <Marca complejo={complejo} tipografias={tipografias} />
                 </div>
               </section>
             ))}

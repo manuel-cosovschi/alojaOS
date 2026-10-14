@@ -425,6 +425,30 @@ WITH esperado(orden, que, existe) AS (
        (SELECT NOT prosecdef FROM pg_proc
          WHERE proname='crear_complejo' AND pronamespace='public'::regnamespace)),
 
+  -- --- 021: la marca del complejo -----------------------------------------
+  (140, 'las cuatro funciones de la 021 existen',
+       (SELECT count(DISTINCT proname) = 4 FROM pg_proc
+         WHERE pronamespace='public'::regnamespace
+           AND proname IN ('guardar_marca','contraste_wcag','luminancia_relativa',
+                           'tipografias_disponibles'))),
+  (141, 'y la que escribe la puede llamar el dueño y no un visitante',
+       has_function_privilege('authenticated',
+         'public.guardar_marca(uuid,text,text,text,text,text,text)', 'EXECUTE')
+        AND NOT has_function_privilege('anon',
+         'public.guardar_marca(uuid,text,text,text,text,text,text)', 'EXECUTE')),
+  -- La cuenta de WCAG, contra los dos valores que define la especificación y
+  -- que no dependen de ninguna implementación. Son los mismos que afirma
+  -- `src/lib/__tests__/contraste.manual.mts`: es lo que ata las dos copias.
+  (142, 'el contraste de negro sobre blanco da 21',
+       (public.contraste_wcag('#000000', '#ffffff') = 21.00)),
+  (143, 'y un color contra sí mismo da 1',
+       (public.contraste_wcag('#7f7f7f', '#7f7f7f') = 1.00)),
+  -- Ninguna de las tipografías ofrecidas pide una fuente a un tercero: eso le
+  -- contaría a ese tercero quién visitó la página del complejo.
+  (144, 'ninguna tipografía ofrecida carga una fuente externa',
+       (SELECT count(*) = 0 FROM public.tipografias_disponibles()
+         WHERE pila ILIKE '%url%' OR pila ILIKE '%http%' OR pila ILIKE '%@import%')),
+
   -- --- RLS en las tablas --------------------------------------------------
   (99, 'RLS prendido en todas las tablas de public',
        (SELECT count(*) = 0 FROM pg_class c

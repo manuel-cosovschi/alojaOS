@@ -23,6 +23,13 @@ export interface ComplejoDelDuenio {
   email: string | null;
   porcentaje_sena: string;
   horas_vencimiento_sena: number;
+  color_principal: string;
+  color_fondo: string;
+  color_texto: string;
+  color_acento: string;
+  /** La PILA de CSS, no la clave. La clave se resuelve en la pantalla. */
+  tipografia_titulos: string | null;
+  tipografia_cuerpo: string | null;
 }
 
 export interface SenaPendiente {
@@ -71,7 +78,7 @@ export async function misComplejos(): Promise<ComplejoDelDuenio[]> {
     .from('complejos')
     // En una sola línea aunque sea larga: Supabase infiere el tipo de la fila
     // del literal de `select`, y partirlo con un `+` lo deja sin forma.
-    .select('id, slug, nombre, moneda, zona_horaria, whatsapp, datos_transferencia, reservas_habilitadas, localidad, email, porcentaje_sena, horas_vencimiento_sena')
+    .select('id, slug, nombre, moneda, zona_horaria, whatsapp, datos_transferencia, reservas_habilitadas, localidad, email, porcentaje_sena, horas_vencimiento_sena, color_principal, color_fondo, color_texto, color_acento, tipografia_titulos, tipografia_cuerpo')
     .order('nombre');
 
   if (error) {
@@ -343,4 +350,32 @@ export async function reglasDe(complejoId: string): Promise<ReglasDelCalendario 
     return null;
   }
   return data as ReglasDelCalendario;
+}
+
+export interface Tipografia {
+  clave: string;
+  nombre: string;
+  pila: string;
+}
+
+/**
+ * Las tipografías que el dueño puede elegir.
+ *
+ * Lista cerrada, y eso no es una limitación caprichosa: lo que se guarde acá
+ * termina en el `font-family` del navegador de cada huésped. Un campo de texto
+ * libre ahí es un campo que acepta CSS.
+ *
+ * Si la consulta falla devuelve una lista vacía, y la pantalla muestra «la del
+ * sistema» sin opciones. Es peor que tener la lista, pero es mejor que ofrecer
+ * un campo libre de emergencia.
+ */
+export async function tipografiasDisponibles(): Promise<Tipografia[]> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('tipografias_disponibles');
+
+  if (error) {
+    console.error('[tipografiasDisponibles] la base devolvió un error:', error.message);
+    return [];
+  }
+  return (data ?? []) as Tipografia[];
 }

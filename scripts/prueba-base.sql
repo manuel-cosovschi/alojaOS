@@ -16,11 +16,40 @@
 \set ON_ERROR_STOP on
 BEGIN;
 
-CREATE TEMP TABLE resultado (n SERIAL, nombre TEXT, paso BOOLEAN, detalle TEXT);
+-- ============================================
+-- El registro de resultados
+-- ============================================
+-- `paso` es NOT NULL, y eso no es decoración: es el arreglo de un agujero que
+-- tenía este arnés y que es exactamente la falla que el proyecto persigue.
+--
+-- Antes la columna admitía NULL, y una aserción cuya expresión daba NULL —cosa
+-- facilísima en SQL: cualquier comparación contra una columna nula da NULL— se
+-- guardaba como NULL. Entonces:
+--
+--   · la línea se imprimía como FALLA, porque NULL no es true;
+--   · el resumen no la contaba como pasada, porque NULL no es true;
+--   · y el chequeo final, `count(*) ... WHERE NOT paso`, TAMPOCO la contaba,
+--     porque `NOT NULL` es NULL y no true.
+--
+-- O sea: la prueba imprimía FALLA, el resumen decía «318 de 319», y el script
+-- salía con código 0 y un «✓ todo bien». Una prueba que no pasa ni falla no
+-- rompía nada. Me pasó escribiendo el bloque 20 y por eso está arreglado.
+--
+-- Una aserción indeterminada es PEOR que una que falla: significa que no se
+-- evaluó, así que no se sabe nada de lo que pretendía comprobar. Por eso se
+-- cuenta como falla y además se marca aparte, con otra palabra.
+CREATE TEMP TABLE resultado (
+  n SERIAL,
+  nombre TEXT,
+  paso BOOLEAN NOT NULL,
+  indeterminada BOOLEAN NOT NULL DEFAULT false,
+  detalle TEXT
+);
 
 CREATE OR REPLACE FUNCTION pg_temp.verificar(p_nombre TEXT, p_paso BOOLEAN, p_detalle TEXT DEFAULT '')
 RETURNS VOID LANGUAGE sql AS $$
-  INSERT INTO resultado (nombre, paso, detalle) VALUES (p_nombre, p_paso, p_detalle);
+  INSERT INTO resultado (nombre, paso, indeterminada, detalle)
+  VALUES (p_nombre, coalesce(p_paso, false), p_paso IS NULL, p_detalle);
 $$;
 
 -- ============================================
@@ -2373,6 +2402,156 @@ BEGIN
   PERFORM set_config('request.jwt.claim.sub', '', true);
 END $$;
 
+
+-- ============================================
+-- 20. La marca del complejo
+-- ============================================
+-- Estos seis valores no son datos que se muestran: son CSS que se ejecuta.
+-- Terminan en el `style` del contenedor de la página del huésped.
+DO $$
+DECLARE
+  v          JSONB;
+  v_complejo UUID := 'aaaaaaaa-0000-0000-0000-000000000001';
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+
+  -- ----------------------------------------------------------------
+  -- La cuenta del contraste, contra valores que se pueden verificar a mano
+  -- ----------------------------------------------------------------
+  -- Negro sobre blanco es 21:1, el máximo posible, y cualquier color contra sí
+  -- mismo es 1:1. Si la fórmula estuviera mal, estos dos no darían.
+  PERFORM pg_temp.verificar('negro sobre blanco da el contraste máximo, 21',
+    public.contraste_wcag('#000000', '#ffffff') = 21.00,
+    public.contraste_wcag('#000000', '#ffffff')::text);
+  PERFORM pg_temp.verificar('y un color contra sí mismo da 1',
+    public.contraste_wcag('#7f7f7f', '#7f7f7f') = 1.00,
+    public.contraste_wcag('#7f7f7f', '#7f7f7f')::text);
+  PERFORM pg_temp.verificar('y da lo mismo en cualquier orden',
+    public.contraste_wcag('#1f2937', '#f8f7f4')
+      = public.contraste_wcag('#f8f7f4', '#1f2937'));
+  -- Los colores por omisión del producto: tienen que pasar el 4.5 de WCAG.
+  PERFORM pg_temp.verificar('los colores por omisión de AlojaOS son legibles',
+    public.contraste_wcag('#111827', '#f8f7f4') >= 4.5,
+    public.contraste_wcag('#111827', '#f8f7f4')::text);
+  PERFORM pg_temp.verificar('un hexadecimal roto devuelve nulo, no un número inventado',
+    public.contraste_wcag('rojo', '#ffffff') IS NULL);
+
+  -- ----------------------------------------------------------------
+  -- Guardar la marca
+  -- ----------------------------------------------------------------
+  v := public.guardar_marca(v_complejo, '#2F4F3A', '#FAF8F2', '#1A1A1A', '#C2681E',
+         'serif', 'sistema');
+  PERFORM pg_temp.verificar('el dueño puede cambiar los colores de su página',
+    (v->>'ok')::boolean = true, v::text);
+  PERFORM pg_temp.verificar('se guardan en minúsculas, una sola forma',
+    (SELECT color_principal = '#2f4f3a' AND color_acento = '#c2681e'
+       FROM complejos WHERE id = v_complejo), v::text);
+  -- La tipografía se guarda como PILA de CSS, pero entra como clave. Es la
+  -- diferencia entre un campo cerrado y un campo que acepta CSS arbitrario.
+  PERFORM pg_temp.verificar('la tipografía se guarda como pila de CSS, no como la clave',
+    (SELECT tipografia_titulos LIKE 'ui-serif%' FROM complejos WHERE id = v_complejo));
+
+  -- Y la consecuencia: la página pública sirve los colores nuevos.
+  PERFORM pg_temp.verificar('y la página del huésped los usa',
+    (public.complejo_publico('cabanias-del-sol')->'marca'->>'color_principal') = '#2f4f3a');
+
+  -- ----------------------------------------------------------------
+  -- El aviso de contraste, que no rechaza nada
+  -- ----------------------------------------------------------------
+  -- Un dueño puede querer contraste bajo y es su página. Lo que no puede pasar
+  -- es que lo elija sin que nadie se lo diga: se ve bien en el monitor donde se
+  -- eligió y no se lee en un celular al sol, y el que no pudo leerla no avisa.
+  v := public.guardar_marca(v_complejo, '#eeeeee', '#ffffff', '#f0f0f0', '#fafafa');
+  PERFORM pg_temp.verificar('gris clarito sobre blanco se guarda igual, porque es su página',
+    (v->>'ok')::boolean = true, v::text);
+  PERFORM pg_temp.verificar('pero el contraste que devuelve lo delata',
+    (v->>'contraste')::numeric < 4.5, v::text);
+
+  -- ----------------------------------------------------------------
+  -- Lo que no es un color
+  -- ----------------------------------------------------------------
+  -- El motivo real: un `url(...)` acá haría que el navegador de cada huésped
+  -- pida ese recurso a un tercero.
+  v := public.guardar_marca(v_complejo, 'url(https://ejemplo.test/x.png)',
+         '#ffffff', '#000000', '#ff0000');
+  PERFORM pg_temp.verificar('un url() no es un color y no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'color_invalido', v::text);
+  PERFORM pg_temp.verificar('y el mensaje dice cuál de los cuatro está mal',
+    v->>'mensaje' LIKE '%principal%', v::text);
+
+  v := public.guardar_marca(v_complejo, 'red', '#ffffff', '#000000', '#ff0000');
+  PERFORM pg_temp.verificar('un nombre de color de CSS tampoco',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'color_invalido', v::text);
+
+  v := public.guardar_marca(v_complejo, '', '#ffffff', '#000000', '#ff0000');
+  PERFORM pg_temp.verificar('ni uno vacío, y lo dice así',
+    (v->>'ok')::boolean = false AND v->>'mensaje' LIKE '%(vacío)%', v::text);
+
+  -- `#abc` sí: es CSS válido y abrevia `#aabbcc`. Se normaliza.
+  v := public.guardar_marca(v_complejo, '#abc', '#fff', '#000', '#f00');
+  PERFORM pg_temp.verificar('el hexadecimal corto se acepta y se normaliza a seis',
+    (v->>'ok')::boolean = true
+    AND (SELECT color_principal = '#aabbcc' AND color_fondo = '#ffffff'
+           FROM complejos WHERE id = v_complejo), v::text);
+
+  -- ----------------------------------------------------------------
+  -- Las tipografías son una lista cerrada
+  -- ----------------------------------------------------------------
+  PERFORM pg_temp.verificar('hay seis tipografías para elegir',
+    (SELECT count(*) = 6 FROM public.tipografias_disponibles()));
+  -- Ninguna carga una fuente de un tercero: eso le contaría a ese tercero quién
+  -- visitó la página del complejo, y mueve el texto cuando termina de cargar.
+  PERFORM pg_temp.verificar('y ninguna pide una fuente a un tercero',
+    NOT EXISTS (SELECT 1 FROM public.tipografias_disponibles()
+                 WHERE pila ILIKE '%url%' OR pila ILIKE '%http%'
+                    OR pila ILIKE '%@import%'));
+
+  -- Se deja una tipografía válida puesta ANTES de intentar la mala, así la
+  -- aserción de abajo compara contra algo. La primera versión comparaba contra
+  -- una columna que estaba en NULL y daba NULL, o sea no comprobaba nada —y el
+  -- arnés la contaba como fallada sin hacer fallar la corrida—. De ahí salió el
+  -- arreglo del encabezado de este archivo.
+  PERFORM public.guardar_marca(v_complejo, '#000000', '#ffffff', '#000000', '#ff0000',
+            'estrecha', 'estrecha');
+
+  v := public.guardar_marca(v_complejo, '#000000', '#ffffff', '#000000', '#ff0000',
+         'Arial; } body { display: none');
+  PERFORM pg_temp.verificar('una tipografía que no está en la lista no entra',
+    (v->>'ok')::boolean = false AND v->>'motivo' = 'tipografia_invalida', v::text);
+  PERFORM pg_temp.verificar('y la que había sigue en pie, sin una letra del CSS colado',
+    (SELECT tipografia_titulos LIKE 'Oswald%' AND tipografia_titulos NOT LIKE '%display%'
+       FROM complejos WHERE id = v_complejo),
+    (SELECT coalesce(tipografia_titulos, '(nula)') FROM complejos WHERE id = v_complejo));
+
+  -- Sin tipografía elegida vuelve a la del sistema, que es NULL en la columna:
+  -- la página cae en la variable CSS por omisión.
+  v := public.guardar_marca(v_complejo, '#1f2937', '#f8f7f4', '#111827', '#b45309');
+  PERFORM pg_temp.verificar('no elegir tipografía la deja nula, y la página usa la de siempre',
+    (v->>'ok')::boolean = true
+    AND (SELECT tipografia_titulos IS NULL AND tipografia_cuerpo IS NULL
+           FROM complejos WHERE id = v_complejo), v::text);
+
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+END $$;
+
+-- Y la marca del vecino no se toca.
+DO $$
+DECLARE v_ok BOOLEAN := false;
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+  BEGIN
+    PERFORM public.guardar_marca('aaaaaaaa-0000-0000-0000-000000000001',
+      '#ff0000', '#ff0000', '#ff0000', '#ff0000');
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true;
+  END;
+  PERFORM pg_temp.verificar('el vecino no puede cambiarle la marca a otro complejo', v_ok);
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+
+  PERFORM pg_temp.verificar('y la marca ajena quedó como estaba',
+    (SELECT color_principal FROM complejos
+      WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001') = '#1f2937');
+END $$;
+
 -- ============================================
 -- Resultado
 -- ============================================
@@ -2380,17 +2559,42 @@ END $$;
 -- lpad RECORTA cuando el texto es más largo que el ancho: con 2, la prueba
 -- 103 se imprimía como «10», igual que la 104 y la 105. Un número de prueba
 -- repetido manda a buscar la prueba equivocada.
-SELECT lpad(n::text, 3) || '  ' || CASE WHEN paso THEN 'OK    ' ELSE 'FALLA ' END || nombre ||
-       CASE WHEN paso OR detalle = '' THEN '' ELSE E'\n        → ' || detalle END AS "prueba de la base"
+-- `NULA` y no `FALLA` cuando la expresión no se evaluó: son dos problemas
+-- distintos. Una que falla dice que el sistema hace algo que no debería; una
+-- nula dice que la prueba está mal escrita y no comprobó nada.
+SELECT lpad(n::text, 3) || '  ' ||
+       CASE WHEN indeterminada THEN 'NULA  ' WHEN paso THEN 'OK    ' ELSE 'FALLA ' END ||
+       nombre ||
+       CASE WHEN indeterminada
+              THEN E'\n        → la expresión dio NULL: no comprobó nada. Suele ser una comparación contra una columna nula.'
+                   || CASE WHEN coalesce(detalle, '') = '' THEN '' ELSE E'\n        → ' || detalle END
+            WHEN paso OR coalesce(detalle, '') = '' THEN ''
+            ELSE E'\n        → ' || detalle
+       END AS "prueba de la base"
   FROM resultado ORDER BY n;
 
 \echo ''
-SELECT count(*) FILTER (WHERE paso) || ' de ' || count(*) || ' pasaron' AS resumen FROM resultado;
+SELECT count(*) FILTER (WHERE paso) || ' de ' || count(*) || ' pasaron'
+       || CASE WHEN count(*) FILTER (WHERE indeterminada) > 0
+               THEN ' · ' || count(*) FILTER (WHERE indeterminada) || ' no comprobaron nada (NULA)'
+               ELSE '' END AS resumen
+  FROM resultado;
 
+-- `paso` ya es NOT NULL, así que este `WHERE NOT paso` no puede volver a
+-- dejar pasar una fila en silencio. Antes sí podía, y lo hizo.
 DO $$
-DECLARE v_fallas INTEGER;
+DECLARE
+  v_fallas INTEGER;
+  v_nulas  INTEGER;
 BEGIN
-  SELECT count(*) INTO v_fallas FROM resultado WHERE NOT paso;
+  SELECT count(*) FILTER (WHERE NOT paso), count(*) FILTER (WHERE indeterminada)
+    INTO v_fallas, v_nulas
+    FROM resultado;
+
+  IF v_nulas > 0 THEN
+    RAISE EXCEPTION '% pruebas fallaron, y % de ésas no comprobaron nada (su expresión dio NULL)',
+      v_fallas, v_nulas;
+  END IF;
   IF v_fallas > 0 THEN
     RAISE EXCEPTION '% pruebas fallaron', v_fallas;
   END IF;

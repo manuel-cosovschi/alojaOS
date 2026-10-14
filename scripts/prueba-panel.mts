@@ -95,7 +95,7 @@ async function base<T = unknown>(path: string, init?: RequestInit): Promise<T> {
 }
 
 /**
- * Las once funciones del panel que ESCRIBEN los datos del complejo.
+ * Las trece funciones del panel que ESCRIBEN los datos del complejo.
  *
  * Se las llama con un complejo inventado y con la clave de servicio, que no
  * tiene `auth.uid()`: `es_miembro()` devuelve false y todas levantan
@@ -116,6 +116,8 @@ const ESCRITURAS: Array<[string, Record<string, unknown>]> = [
   ['habilitar_reservas', { p_complejo: INVENTADO, p_habilitar: false }],
   ['guardar_unidad', { p_complejo: INVENTADO, p_codigo: 'X', p_nombre: 'x', p_capacidad: 1, p_sugerencia: null, p_orden: null, p_activa: true, p_unidad: null }],
   ['borrar_unidad', { p_unidad: INVENTADO }],
+  ['crear_complejo', { p_datos: {} }],
+  ['guardar_marca', { p_complejo: INVENTADO, p_principal: '#000000', p_fondo: '#ffffff', p_texto: '#000000', p_acento: '#ff0000', p_titulos: null, p_cuerpo: null }],
 ];
 
 /** Un día como lo escribe la pantalla: `11/02/27`. El `T12:00` evita que se corra uno. */
@@ -692,12 +694,12 @@ async function main() {
 
     verificar(
       FALTANTES.length === 0,
-      'las once funciones que escriben están aplicadas en la base',
+      'las trece funciones que escriben están aplicadas en la base',
       FALTANTES.length === 0
         ? ''
         : `faltan ${FALTANTES.length}: ${FALTANTES.join(', ')}\n       ` +
           'El panel muestra todo y no guarda nada. Se arregla pegando las ' +
-          'migraciones 016, 017 y 018 en el SQL Editor de Supabase, en ese orden; ' +
+          'migraciones 016 a 021 en el SQL Editor de Supabase, en ese orden; ' +
           'está explicado en supabase/a_mano/02_las_escrituras_del_panel.sql'
     );
 

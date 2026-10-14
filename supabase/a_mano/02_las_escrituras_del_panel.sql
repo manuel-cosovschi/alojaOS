@@ -26,6 +26,7 @@
 --   guardar_unidad()              ✗ falta
 --   borrar_unidad()               ✗ falta
 --   crear_complejo()              ✗ falta  (la 020: el alta de un cliente)
+--   guardar_marca()               ✗ falta  (la 021: colores y tipografías)
 --
 -- El conector corta la llamada a los 60 segundos sin ejecutar nada cuando el
 -- SQL contiene sentencias que trata como destructivas —lo mismo que ya pasaba
@@ -59,17 +60,18 @@
 --   3. supabase/migrations/018_datos_del_complejo.sql
 --   4. supabase/migrations/019_registro_de_migraciones.sql
 --   5. supabase/migrations/020_alta_de_cliente.sql
+--   6. supabase/migrations/021_la_marca_del_complejo.sql
 --
--- Las cinco son idempotentes (`CREATE OR REPLACE` y `IF NOT EXISTS`), así que
+-- Las seis son idempotentes (`CREATE OR REPLACE` y `IF NOT EXISTS`), así que
 -- volver a aplicar lo que ya está no hace nada.
 --
 -- Después, correr `scripts/verificar-produccion.sql` en el mismo editor: tienen
 -- que dar `ok` las filas 93 a 98 (la 016), 100 a 105 (la 017), 110 a 115 (la
--- 018), 120 y 121 (la 019) y 130 a 132 (la 020).
+-- 018), 120 y 121 (la 019), 130 a 132 (la 020) y 140 a 144 (la 021).
 --
 -- Y `npm run prueba:panel`, que tiene una asercion sola para esto: le pregunta
--- a la base si las once funciones que escriben existen, y hoy dice que faltan
--- las once.
+-- a la base si las trece funciones que escriben existen, y hoy dice que faltan
+-- las trece.
 --
 -- ------------------------------------------------------------------
 -- Para que esto no vuelva a pasar

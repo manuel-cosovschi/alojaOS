@@ -683,6 +683,64 @@ export async function borrarUnidad(unidadId: string): Promise<Resultado> {
   return { ok: true, mensaje: `${r.nombre} borrada.` };
 }
 
+/**
+ * Guardar la marca: los cuatro colores y las dos tipografías.
+ *
+ * Las tipografías van por CLAVE (`serif`, `estrecha`…) y no por pila de CSS. Lo
+ * que se guarda termina en el `font-family` del navegador de cada huésped, así
+ * que el conjunto de valores aceptados es cerrado y lo decide la base.
+ *
+ * El contraste que vuelve es el que calculó la base. La pantalla también lo
+ * calcula mientras el dueño mueve el color —si no, el aviso llegaría un guardado
+ * tarde, que para elegir un color no sirve— y las dos cuentas están atadas por
+ * pruebas que afirman los mismos valores.
+ */
+export async function guardarMarca(
+  complejoId: string,
+  principal: string,
+  fondo: string,
+  texto: string,
+  acento: string,
+  titulos: string | null,
+  cuerpo: string | null
+): Promise<Resultado> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('guardar_marca', {
+    p_complejo: complejoId,
+    p_principal: principal,
+    p_fondo: fondo,
+    p_texto: texto,
+    p_acento: acento,
+    p_titulos: titulos,
+    p_cuerpo: cuerpo,
+  });
+
+  if (error) {
+    console.error('[guardarMarca] la base no dejó:', error.message);
+    return { ok: false, mensaje: mensajeDeError(error.message) };
+  }
+
+  const r = (data ?? {}) as Record<string, unknown>;
+  if (r.ok !== true) {
+    return {
+      ok: false,
+      mensaje: (typeof r.mensaje === 'string' && r.mensaje) || 'No pudimos guardarlo.',
+    };
+  }
+
+  // Un contraste bajo se guarda igual —es su página— pero se dice. La página se
+  // ve bien en el monitor donde se eligió y no se lee en un celular al sol, y
+  // el que no pudo leerla no escribe para avisar.
+  const c = Number(r.contraste ?? 0);
+  return {
+    ok: true,
+    mensaje:
+      c > 0 && c < 4.5
+        ? `Guardado. Ojo: el contraste entre tu texto y tu fondo es ${c}:1, y abajo de 4,5 cuesta leerlo en un celular al sol.`
+        : 'Guardado. Así va a ver tu página el huésped.',
+  };
+}
+
 /** Reabrir una fecha cerrada, por su id. */
 export async function reabrirFecha(bloqueoId: string): Promise<Resultado> {
   const supabase = await clienteConSesion();

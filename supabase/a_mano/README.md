@@ -21,8 +21,8 @@ a la herramienta lo que la función hace.
 
 - `02_las_escrituras_del_panel.sql` **bloquea**. Mientras no se corra, el panel
   muestra todo y no guarda nada: entraron las tres funciones que leen y ninguna
-  de las once que escriben. Es pegar las migraciones 016, 017 y 018 en el SQL
-  Editor, en ese orden; las tres son idempotentes. `npm run prueba:panel` tiene
+  de las trece que escriben. Es pegar las migraciones 016 a 021 en el SQL
+  Editor, en ese orden; las seis son idempotentes. `npm run prueba:panel` tiene
   una aserción sola para esto y hoy falla.
 - `01_sacar_la_funcion_vieja.sql` es limpieza y no bloquea nada: borra una
   función que quedó corrida a un costado y que no puede llamar nadie.
