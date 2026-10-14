@@ -147,6 +147,7 @@ export interface UnidadDelPanel {
   codigo: string;
   nombre: string;
   orden: number;
+  activa: boolean;
 }
 
 /** Las unidades del complejo, para elegir cuál cerrar. */
@@ -154,7 +155,7 @@ export async function unidadesDe(complejoId: string): Promise<UnidadDelPanel[]> 
   const supabase = await clienteConSesion();
   const { data, error } = await supabase
     .from('unidades')
-    .select('id, codigo, nombre, orden')
+    .select('id, codigo, nombre, orden, activa')
     .eq('complejo_id', complejoId)
     .order('orden');
 
@@ -183,11 +184,19 @@ export async function bloqueosDe(complejoId: string): Promise<Bloqueo[]> {
   return (data ?? []) as Bloqueo[];
 }
 
-/** El precio de una unidad en un período. `precio` null = no tiene. */
+/**
+ * El precio de una unidad en un período. `precio` null = no tiene.
+ *
+ * Las unidades inactivas vienen también, con `activa: false`. El formulario
+ * tiene que mostrarlas porque los precios se reemplazan enteros: si no
+ * estuvieran, guardar les borraría el precio y el día que el dueño vuelva a
+ * activar la unidad quedaría invendible sin que nada lo diga.
+ */
 export interface PrecioDeUnidad {
   unidad_id: string;
   codigo: string;
   nombre: string;
+  activa: boolean;
   precio: string | null;
 }
 

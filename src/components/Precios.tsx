@@ -307,13 +307,20 @@ function Fila({
           se omiten. */}
       <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs">
         {periodo.precios.map((p) => (
-          <span key={p.unidad_id} className={p.precio === null ? 'text-red-700' : 'opacity-70'}>
+          <span
+            key={p.unidad_id}
+            className={!p.activa ? 'opacity-40' : p.precio === null ? 'text-red-700' : 'opacity-70'}
+          >
             {p.codigo}:{' '}
             {p.precio === null ? (
-              <strong>sin precio</strong>
+              // Sin precio es rojo sólo si la unidad se vende. Una unidad fuera
+              // de circulación sin precio no es un problema: no se publica ni
+              // se puede reservar, por otro motivo.
+              p.activa ? <strong>sin precio</strong> : 'sin precio'
             ) : (
               plata(Number(p.precio), moneda)
             )}
+            {!p.activa && <span className="ml-1">(fuera de circulación)</span>}
           </span>
         ))}
       </div>
@@ -373,7 +380,10 @@ function Formulario({
   );
 
   const listo = !!desde && !!hasta && desde <= hasta;
-  const sinPrecio = unidades.filter((u) => !precios[u.id]?.trim());
+  // Sólo las activas: avisar de una unidad que el dueño sacó de circulación a
+  // propósito sería una alarma falsa, y las alarmas falsas enseñan a ignorar
+  // las alarmas.
+  const sinPrecio = unidades.filter((u) => u.activa && !precios[u.id]?.trim());
 
   function enviar() {
     if (!listo) return;
@@ -445,9 +455,16 @@ function Formulario({
         <p className="text-sm opacity-70">Precio por noche, por unidad</p>
         <div className="mt-1 grid gap-2 sm:grid-cols-2">
           {unidades.map((u) => (
+            // Las inactivas se muestran igual, porque los precios se reemplazan
+            // enteros: si el campo no estuviera, guardar le borraría el precio y
+            // el día que el dueño la reactive quedaría invendible en silencio.
             <label key={u.id} className="flex items-center gap-2 text-sm">
-              <span className="w-28 shrink-0 truncate opacity-70" title={u.nombre}>
+              <span
+                className={`w-28 shrink-0 truncate ${u.activa ? 'opacity-70' : 'opacity-40'}`}
+                title={u.activa ? u.nombre : `${u.nombre} — fuera de circulación`}
+              >
                 {u.nombre}
+                {!u.activa && ' · fuera'}
               </span>
               <input
                 inputMode="decimal"

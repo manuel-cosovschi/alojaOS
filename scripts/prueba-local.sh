@@ -223,4 +223,20 @@ if grep -q "FALTA" "$VERIF"; then
 fi
 echo "   OK    todas las filas del verificador dan ok"
 
+# ---------------------------------------------------------------------------
+# Las huellas de las funciones, para comparar con producción
+# ---------------------------------------------------------------------------
+# Con `--huellas` imprime `md5(prosrc)` de cada función de `public` y no imprime
+# nada más, así que la salida se puede comparar con un `diff` contra la misma
+# consulta corrida en Supabase.
+#
+# Para qué: el verificador comprueba que las funciones EXISTAN y que los
+# permisos sean los que tienen que ser, no que el cuerpo sea el del repo.
+# Cuando una migración se aplica a medias puede quedar en producción la versión
+# ANTERIOR de una función: existe, está concedida, contesta, y hace otra cosa.
+if [ "${1:-}" = "--huellas" ]; then
+  $PSQL -d alojaos -At -F '  ' -f "$RAIZ/scripts/huellas-de-funciones.sql"
+  exit 0
+fi
+
 echo "✓ todo bien"

@@ -20,12 +20,27 @@
 -- para escribir, acá va `salud_de_los_precios()`, que recorre la ventana de
 -- reservas y dice qué unidad no se puede cotizar y desde cuándo.
 --
--- La función de escritura **no se niega** a dejar una unidad sin precio. Puede
--- ser a propósito: la cabaña chica no se alquila en invierno. Lo que no puede
--- pasar es que sea a propósito sin que nadie lo sepa, y de eso se encarga la
--- otra. Si algún cliente necesita decir «esta unidad no se alquila en este
--- período» como un dato y no como un agujero, eso es un campo nuevo, no una
--- adivinanza acá.
+-- La función de escritura **no se niega** a dejar una unidad sin precio. Lo que
+-- no puede pasar es que sea a propósito sin que nadie lo sepa, y de eso se
+-- encarga la otra.
+--
+-- ------------------------------------------------------------------
+-- La unidad que está fuera de circulación no es un agujero
+-- ------------------------------------------------------------------
+-- `unidades.activa` ya existe desde la 001, y ya lo respetan los dos lugares
+-- que importan: `complejo_publico()` no publica las inactivas y
+-- `crear_reserva()` no deja reservarlas. Así que una unidad inactiva sin precio
+-- **no es un problema**: no se puede reservar por otro motivo.
+--
+-- `salud_de_los_precios()` cuenta sólo las activas. La primera versión contaba
+-- todas, y eso le habría puesto un rojo permanente al dueño que saca la cabaña
+-- chica en invierno —que es el caso normal, no el raro—. Es el mismo error que
+-- cometí en `borrar_periodo()`: avisar de algo que no es un problema.
+--
+-- `periodos_del_complejo()`, al contrario, las lista TODAS, con su `activa`.
+-- Porque los precios se reemplazan enteros: si el formulario no mostrara la
+-- unidad inactiva, guardar le borraría el precio, y el día que el dueño la
+-- vuelve a activar quedaría invendible sin que nada lo diga.
 --
 -- ------------------------------------------------------------------
 -- Por qué las unidades se validan a mano
@@ -48,6 +63,10 @@
 -- Incluye las unidades SIN precio con `precio: null` en vez de omitirlas: un
 -- hueco que no aparece en la lista es un hueco que la pantalla no puede
 -- mostrar, y mostrarlo es la mitad del punto.
+--
+-- Y las inactivas también, con su `activa` al lado. Omitirlas haría que guardar
+-- el formulario les borre el precio —los precios se reemplazan enteros— y el
+-- día que el dueño vuelva a activar la unidad quedaría invendible en silencio.
 CREATE OR REPLACE FUNCTION public.periodos_del_complejo(p_complejo UUID)
 RETURNS TABLE (
   id       UUID,
@@ -80,6 +99,7 @@ BEGIN
                  'unidad_id', u.id,
                  'codigo',    u.codigo,
                  'nombre',    u.nombre,
+                 'activa',    u.activa,
                  'precio',    pu.precio
                ) ORDER BY u.orden, u.codigo
              )
@@ -409,8 +429,10 @@ BEGIN
   SELECT cc.primera_fecha, cc.ultima_fecha INTO v_primera, v_hasta
     FROM config_calendario cc WHERE cc.complejo_id = p_complejo;
 
+  -- Sólo las activas: una unidad fuera de circulación no se publica ni se
+  -- puede reservar, así que no tener precio no le hace nada. Ver el encabezado.
   SELECT count(*)::INTEGER INTO v_unidades
-    FROM unidades WHERE complejo_id = p_complejo;
+    FROM unidades WHERE complejo_id = p_complejo AND activa;
 
   IF v_hasta IS NULL THEN
     -- Sin configuración de calendario la página no sabe hasta cuándo se puede
@@ -452,6 +474,7 @@ BEGIN
           FROM unidades u
           JOIN periodos_precio p ON p.complejo_id = p_complejo
          WHERE u.complejo_id = p_complejo
+           AND u.activa
            AND daterange(p.desde, p.hasta, '[]') && daterange(v_desde, v_hasta, '[]')
            AND NOT EXISTS (
              SELECT 1 FROM precios_unidad pu

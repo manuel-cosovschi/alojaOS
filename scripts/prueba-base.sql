@@ -1363,6 +1363,54 @@ BEGIN
     (public.salud_de_los_precios(v_complejo)->>'esta_bien')::boolean = true);
 
   -- ----------------------------------------------------------------
+  -- La unidad fuera de circulación no es un agujero
+  -- ----------------------------------------------------------------
+  -- `unidades.activa` existe desde la 001 y lo respetan `complejo_publico()` y
+  -- `crear_reserva()`. Así que una unidad inactiva sin precio NO es un
+  -- problema: no se puede reservar por otro motivo.
+  --
+  -- La primera versión de `salud_de_los_precios()` contaba todas las unidades,
+  -- y le habría puesto un rojo permanente al dueño que saca la cabaña chica en
+  -- invierno —que es el caso normal, no el raro—.
+  UPDATE unidades SET activa = false WHERE id = v_p2;
+  v := public.guardar_periodo(v_complejo, v_hoy + 100, v_hoy + 180,
+         jsonb_build_object(v_p1::text, '90000', v_p2::text, ''),
+         'alta', (SELECT id FROM public.periodos_del_complejo(v_complejo)
+                   WHERE etiqueta = 'alta'));
+  PERFORM pg_temp.verificar('sacar una unidad de circulación y dejarla sin precio está bien',
+    (v->>'ok')::boolean = true, v::text);
+
+  v := public.salud_de_los_precios(v_complejo);
+  PERFORM pg_temp.verificar('y la salud de precios no la cuenta como agujero',
+    jsonb_array_length(v->'unidades_sin_precio') = 0
+    AND (v->>'esta_bien')::boolean = true, v::text);
+  PERFORM pg_temp.verificar('y cuenta una sola unidad vendible, no dos',
+    (v->>'unidades')::int = 1, v::text);
+
+  -- Pero el formulario tiene que seguir viéndola, porque los precios se
+  -- reemplazan enteros: si no apareciera, guardar le borraría el precio y el
+  -- día que el dueño la reactive quedaría invendible en silencio.
+  PERFORM pg_temp.verificar('pero la lista del panel la sigue mostrando, marcada',
+    (SELECT jsonb_array_length(precios) = 2
+            AND EXISTS (SELECT 1 FROM jsonb_array_elements(precios) AS e
+                         WHERE e->>'codigo' = 'P2' AND (e->>'activa')::boolean = false)
+       FROM public.periodos_del_complejo(v_complejo)
+      WHERE etiqueta = 'alta'));
+
+  -- Y al reactivarla, el agujero reaparece: es el mismo agujero de antes.
+  UPDATE unidades SET activa = true WHERE id = v_p2;
+  PERFORM pg_temp.verificar('y al volver a activarla el agujero reaparece',
+    (public.salud_de_los_precios(v_complejo)->>'esta_bien')::boolean = false);
+
+  -- Se le pone el precio y queda bien.
+  PERFORM public.guardar_periodo(v_complejo, v_hoy + 100, v_hoy + 180,
+            jsonb_build_object(v_p1::text, '90000', v_p2::text, '140000'),
+            'alta', (SELECT id FROM public.periodos_del_complejo(v_complejo)
+                      WHERE etiqueta = 'alta'));
+  PERFORM pg_temp.verificar('y con el precio puesto vuelve a estar todo cotizable',
+    (public.salud_de_los_precios(v_complejo)->>'esta_bien')::boolean = true);
+
+  -- ----------------------------------------------------------------
   -- Lo que no es un precio
   -- ----------------------------------------------------------------
   v := public.guardar_periodo(v_complejo, v_hoy + 300, v_hoy + 310,
