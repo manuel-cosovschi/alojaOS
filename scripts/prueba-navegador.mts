@@ -421,27 +421,64 @@ async function main() {
         // darle tiempo. Si no apareciera, la prueba lo dice en vez de suponer
         // que tardó: una reserva sin fila de aviso es una reserva de la que el
         // huésped no se enteró.
-        let aviso: { estado: string; error: string | null; destino: string | null } | undefined;
+        let aviso:
+          | { estado: string; error: string | null; destino: string | null; id_externo: string | null }
+          | undefined;
         for (let i = 0; i < 12 && !aviso; i += 1) {
           await page.waitForTimeout(500);
           const res = await fetch(
-            `${urlSupa}/rest/v1/avisos?reserva_id=eq.${idReserva}&select=estado,error,destino`,
+            `${urlSupa}/rest/v1/avisos?reserva_id=eq.${idReserva}&select=estado,error,destino,id_externo`,
             { headers: { apikey: servicio, Authorization: `Bearer ${servicio}` } }
           );
           if (res.ok) [aviso] = (await res.json()) as typeof aviso extends undefined ? never[] : Array<NonNullable<typeof aviso>>;
         }
 
         verificar(!!aviso, 'reservar deja anotado el intento de aviso por mail');
-        verificar(
-          aviso?.estado !== 'ENVIADO',
-          'y sin proveedor de mail NO figura como enviado',
-          `quedó en ${aviso?.estado}`
-        );
-        verificar(
-          aviso?.estado === 'SIN_CONFIGURAR' && !!aviso?.error,
-          'figura como SIN_CONFIGURAR, con el motivo escrito',
-          `${aviso?.estado}: ${aviso?.error}`
-        );
+
+        // ----------------------------------------------------------------
+        // El estado que se espera depende de cómo está configurado el mail
+        // ----------------------------------------------------------------
+        // Tres estados posibles, y el que corresponde se MIRA en vez de
+        // asumirse —el mismo arreglo que la subida de comprobantes, por el
+        // mismo motivo: un arnés que asume el caso roto da falsas alarmas, y
+        // una falsa alarma enseña a leer las fallas como ruido—.
+        //
+        //   sin clave            → SIN_CONFIGURAR, y el motivo nombra la clave
+        //   con clave, sin de    → SIN_CONFIGURAR, y el motivo nombra RESEND_DE
+        //   con las dos          → ENVIADO
+        //
+        // El tercero es el único que no se puede exigir hoy: `RESEND_DE` pide un
+        // dominio verificado en Resend, y hasta que exista alojaos.shop la
+        // cuenta no tiene ninguno. Cuando lo tenga, esta misma aserción lo
+        // comprueba sin tocar nada.
+        const hayClave = !!(process.env.RESEND_API_KEY ?? delEnv('RESEND_API_KEY'));
+        const hayRemitente = !!(process.env.RESEND_DE ?? delEnv('RESEND_DE'));
+
+        if (hayClave && hayRemitente) {
+          verificar(
+            aviso?.estado === 'ENVIADO' && !!aviso?.id_externo,
+            'con el mail configurado, el aviso figura como ENVIADO y con el id del proveedor',
+            `${aviso?.estado}: ${aviso?.error ?? ''}`
+          );
+        } else {
+          verificar(
+            aviso?.estado === 'SIN_CONFIGURAR' && !!aviso?.error,
+            'sin el mail configurado, el aviso figura como SIN_CONFIGURAR y NO como enviado',
+            `${aviso?.estado}: ${aviso?.error}`
+          );
+          // Y el motivo tiene que decir QUÉ falta, no «falta algo»: con la clave
+          // puesta y sin remitente, un mensaje que siga nombrando la clave
+          // mandaría a buscar donde ya está resuelto.
+          verificar(
+            hayClave
+              ? !!aviso?.error?.includes('RESEND_DE')
+              : !!aviso?.error?.includes('RESEND_API_KEY'),
+            hayClave
+              ? 'y el motivo dice que falta el remitente, no la clave'
+              : 'y el motivo dice que falta la clave',
+            aviso?.error ?? '(sin motivo)'
+          );
+        }
         verificar(
           aviso?.destino === 'prueba@ejemplo.test',
           'y con la dirección a la que se habría mandado',
