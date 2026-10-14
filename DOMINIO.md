@@ -4,6 +4,18 @@ Comprado en GoDaddy el 14/10/2026. Estado al día de hoy y qué falta.
 
 ---
 
+## Estado del DNS, 14/10 a las 15:00
+
+`alojaos.shop` todavía **no resuelve**: dos resolvers independientes (Google y
+Cloudflare) devuelven NXDOMAIN, o sea que el registro de `.shop` todavía no
+publicó el dominio. Un dominio recién comprado tarda de minutos a unas horas en
+aparecer en la zona del TLD.
+
+Mientras no aparezca ahí, no se puede distinguir si el cambio de nameservers ya
+se hizo o no: el registro no tiene ningún dato del dominio todavía.
+
+---
+
 ## ⚠️ Lo único que falta, y lo tenés que hacer vos
 
 **Cambiar los nameservers en GoDaddy.** Es lo único a lo que yo no tengo acceso.
@@ -60,9 +72,20 @@ En este orden, y **no antes**, porque hacerlo antes rompe lo que hoy funciona:
    la página del complejo, el que el dueño le manda al huésped— apuntan a un
    dominio que todavía no existe.
 3. **Redesplegar** y correr `npm run prueba:despliegue` contra el dominio nuevo.
-4. **Agregar `alojaos.shop` en Resend** y cargar los registros de verificación y
-   DKIM. Eso ya lo puedo hacer yo por la API de Vercel, porque el DNS va a estar
-   ahí. Después `RESEND_DE` y los mails salen.
+4. **Cargar los registros de Resend** en el DNS de Vercel. El dominio ya está
+   agregado en Resend (`bb667265-2081-4c4d-add7-8931705b5d33`, región
+   `sa-east-1`, que es la más cerca de los destinatarios argentinos) y espera
+   estos cuatro:
+
+   | Tipo | Nombre | Valor |
+   |---|---|---|
+   | `TXT` | `resend._domainkey` | la clave DKIM (larga; se trae de la API de Resend) |
+   | `MX` | `send` | `feedback-smtp.sa-east-1.amazonses.com`, prioridad 10 |
+   | `TXT` | `send` | `v=spf1 include:amazonses.com ~all` |
+   | `CNAME` | `rsend` | `send.forge.rmta.net` |
+
+   Los creo yo por la API de Vercel apenas el DNS esté ahí. Después `RESEND_DE`
+   y los mails salen.
 5. **Y entonces sí, el primer cliente:**
    ```
    cp scripts/ejemplo-alta.json clientes/su-complejo.json
