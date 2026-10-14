@@ -28,7 +28,7 @@
  */
 
 import Image from 'next/image';
-import { MARCA } from '@/lib/marca-alojaos';
+import { NOCHE } from '@/lib/marca-alojaos';
 import { CAPTURAS } from './capturas.generado';
 
 type Clave = keyof typeof CAPTURAS;
@@ -69,6 +69,30 @@ export function Captura({
 }
 
 /**
+ * El marco de las capturas anchas.
+ *
+ * `overflow-hidden` con el mismo radio que el borde: sin eso la esquina de la
+ * imagen sobresale del borde redondeado y se ve como un error de maquetación.
+ *
+ * El fondo es blanco porque las capturas del panel lo son: un marco oscuro
+ * alrededor de una imagen clara deja un halo en el borde.
+ */
+export function Marco({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="overflow-hidden rounded-2xl"
+      style={{
+        border: `1px solid ${NOCHE.borde}`,
+        background: 'white',
+        boxShadow: '0 20px 50px rgba(0,0,0,.35)',
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
  * El marco de teléfono.
  *
  * No es decoración: el dueño de un complejo chico atiende su negocio desde el
@@ -78,12 +102,14 @@ export function Captura({
 export function Telefono({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="mx-auto w-full max-w-[300px] rounded-[2.2rem] p-2.5 shadow-xl"
-      style={{ background: MARCA.tinta }}
+      className="mx-auto w-full max-w-[300px] rounded-[2.2rem] p-2.5"
+      style={{
+        background: '#0b2a2c',
+        border: `1px solid ${NOCHE.borde}`,
+        boxShadow: '0 26px 60px rgba(0,0,0,.45)',
+      }}
     >
-      <div className="overflow-hidden rounded-[1.7rem]" style={{ background: MARCA.crema }}>
-        {children}
-      </div>
+      <div className="overflow-hidden rounded-[1.7rem] bg-white">{children}</div>
     </div>
   );
 }

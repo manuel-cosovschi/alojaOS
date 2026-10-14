@@ -41,3 +41,68 @@ body {
 h1, h2, h3 {
   font-family: var(--fuente-titulo);
 }
+
+/*
+ * Lo que aparece al scrollear, en la página comercial.
+ *
+ * ------------------------------------------------------------------
+ * Por qué `.con-js` y no esconder y listo
+ * ------------------------------------------------------------------
+ * Una animación de aparición esconde el contenido y confía en que algo lo
+ * vuelva a mostrar. Si ese algo no corre —JavaScript que no cargó, un error
+ * antes de instalar el observador, un robot que lee el HTML— la página queda en
+ * blanco. Es la falla de siempre de este proyecto, vestida de animación: algo
+ * contesta que está bien sin estarlo.
+ *
+ * Así que el estado escondido se aplica SÓLO cuando una línea de JavaScript ya
+ * corrió y puso `con-js` en el <html>. Sin JavaScript no se esconde nada: la
+ * página se ve entera, quieta. Y la línea corre antes de pintar, así que
+ * tampoco hay un parpadeo del contenido apareciendo y escondiéndose.
+ *
+ * El observador revela además todo lo que quede después de unos segundos, por
+ * si algo falla: nada se queda escondido para siempre.
+ */
+.con-js [data-revelar] {
+  opacity: 0;
+  transform: translateY(16px);
+}
+
+.con-js [data-revelar][data-visible] {
+  opacity: 1;
+  transform: none;
+  /* Una curva que frena al final: el movimiento se siente intencional y no
+     elástico. 600 ms es el techo de lo que no se percibe como lento. */
+  transition:
+    opacity 600ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Y para quien pidió que las cosas no se muevan, no se mueven. Es una
+   preferencia del sistema operativo, no un gusto: hay gente a la que el
+   movimiento le da náuseas. */
+@media (prefers-reduced-motion: reduce) {
+  .con-js [data-revelar],
+  .con-js [data-revelar][data-visible] {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* La cinta de la franja de abajo del hero. Se duplica el contenido y se
+   desplaza la mitad: al llegar al 50 % el segundo juego está exactamente donde
+   arrancó el primero, así que el salto no se ve. */
+@keyframes cinta {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.cinta {
+  animation: cinta 38s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cinta {
+    animation: none;
+  }
+}

@@ -29,7 +29,7 @@ export const CAPTURAS = {
   'panel-senas': {
     archivo: '/capturas/panel-senas.png',
     ancho: 1664,
-    alto: 1000,
+    alto: 488,
     que: "Las señas esperando, con su comprobante y su plazo",
     de: "http://alojaos.test:3000/panel",
   },

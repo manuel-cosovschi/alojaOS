@@ -164,6 +164,36 @@ async function main() {
       verificar(inicial !== despues, 'y el número cambia al mover una perilla', `${inicial} → ${despues}`);
     }
 
+    // --- Sin JavaScript, la página se ve entera ----------------------------
+    // Las secciones aparecen al scrollear, y una animación de aparición
+    // esconde el contenido y confía en que algo lo vuelva a mostrar. Si ese
+    // algo no corre, la página de venta queda en blanco: la falla de siempre
+    // de este proyecto, vestida de animación.
+    //
+    // Por eso el estado escondido se aplica sólo bajo `.con-js`, y por eso
+    // esto lo comprueba de la única forma que vale: abriendo la página con
+    // JavaScript apagado y mirando si el texto está.
+    {
+      const sinJs = await navegador.newContext({ javaScriptEnabled: false });
+      const quieta = await sinJs.newPage();
+      await quieta.setViewportSize({ width: 1280, height: 900 });
+      await quieta.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
+
+      const texto = await quieta.locator('body').innerText();
+      const escondidos = await quieta.evaluate(
+        `Array.from(document.querySelectorAll('[data-revelar]'))
+           .filter(function (el) { return getComputedStyle(el).opacity !== '1'; }).length`
+      );
+
+      verificar(texto.length > 2000, 'sin JavaScript la página igual tiene su texto', `${texto.length} caracteres`);
+      verificar(
+        escondidos === 0,
+        'y no queda ningún bloque escondido esperando una animación',
+        `${escondidos} bloques con opacidad distinta de 1`
+      );
+      await sinJs.close();
+    }
+
     // --- Lo que la página NO puede decir -----------------------------------
     // AlojaOS no tiene clientes todavía. Un testimonio o un porcentaje de
     // resultados sería inventado, y un dato inventado en una página de venta se
