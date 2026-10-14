@@ -127,10 +127,25 @@ export async function enlaceAlComprobante(reservaId: string): Promise<string | n
   return data.signedUrl;
 }
 
-/** El texto de un error de la base, traducido a algo que se pueda leer. */
+/**
+ * El texto de un error de la base, traducido a algo que se pueda leer.
+ *
+ * El caso de la función que no existe está acá por algo que pasó de verdad: la
+ * migración 016 quedó a medias en producción —el conector con el que la aplico
+ * no pudo con dos de las cuatro funciones— y el panel, con el código nuevo
+ * desplegado, le iba a decir al dueño «probá de nuevo en un minuto». Probar de
+ * nuevo no iba a arreglar nada nunca.
+ *
+ * Es la clase de mentira que este sistema existe para no decir, y va a volver a
+ * pasar cada vez que el código se despliegue antes que la migración. Así que el
+ * mensaje dice qué es: falta algo de nuestro lado, no de tu lado.
+ */
 function mensajeDeError(mensaje: string): string {
   if (/insufficient_privilege|No tenés acceso/i.test(mensaje)) {
     return 'Esa reserva no es de tu complejo.';
+  }
+  if (/PGRST202|Could not find the function|schema cache/i.test(mensaje)) {
+    return 'Esta parte todavía no está lista en el servidor. No es algo tuyo y volver a intentar no lo arregla: avisanos y lo dejamos andando.';
   }
   return 'No pudimos hacerlo. Probá de nuevo en un minuto.';
 }
@@ -198,6 +213,104 @@ export async function cerrarFechas(
   }
 
   return { ok: true, mensaje: 'Listo, esas fechas quedaron cerradas.' };
+}
+
+/**
+ * Guardar un período de precios.
+ *
+ * `periodoId` null es un alta. Los precios van como `{unidad_id: texto}` y el
+ * texto puede estar vacío: eso significa «esta unidad no tiene precio en este
+ * tramo», que está permitido y queda visible en la salud de precios.
+ *
+ * No valida nada acá. `guardar_periodo()` comprueba el complejo con
+ * `es_miembro()`, comprueba que cada unidad sea de ese complejo —hace falta,
+ * porque es SECURITY DEFINER y RLS no corre adentro—, y el solape con otro
+ * período lo decide la restricción al escribir. Repetir esas comprobaciones en
+ * TypeScript daría dos lugares que tienen que estar de acuerdo, y el que manda
+ * es el de abajo.
+ */
+export async function guardarPeriodo(
+  complejoId: string,
+  desde: string,
+  hasta: string,
+  precios: Record<string, string>,
+  etiqueta: string,
+  periodoId: string | null
+): Promise<Resultado> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('guardar_periodo', {
+    p_complejo: complejoId,
+    p_desde: desde,
+    p_hasta: hasta,
+    p_precios: precios,
+    p_etiqueta: etiqueta.trim() || null,
+    p_periodo: periodoId,
+  });
+
+  if (error) {
+    console.error('[guardarPeriodo] la base no dejó:', error.message);
+    return { ok: false, mensaje: mensajeDeError(error.message) };
+  }
+
+  const r = (data ?? {}) as Record<string, unknown>;
+  if (r.ok !== true) {
+    const base = typeof r.mensaje === 'string' ? r.mensaje : 'No pudimos guardarlo.';
+    const choca = r.choca_con as Record<string, unknown> | undefined;
+    if (r.motivo === 'se_pisa' && choca && typeof choca.desde === 'string') {
+      const nombre = choca.etiqueta ? `«${choca.etiqueta}»` : 'ese período';
+      return {
+        ok: false,
+        mensaje: `${base} ${nombre} va del ${choca.desde} al ${choca.hasta}.`,
+      };
+    }
+    return { ok: false, mensaje: base };
+  }
+
+  // Cuántas unidades quedaron sin precio es el dato que importa de la
+  // respuesta: una unidad sin precio no se puede reservar, y el que acaba de
+  // guardar es el único que puede arreglarlo ahora mismo.
+  const conPrecio = Number(r.unidades_con_precio ?? 0);
+  return {
+    ok: true,
+    mensaje:
+      r.era_alta === true
+        ? `Período cargado, ${r.noches} noches, ${conPrecio} ${conPrecio === 1 ? 'unidad' : 'unidades'} con precio.`
+        : `Guardado. ${r.noches} noches, ${conPrecio} ${conPrecio === 1 ? 'unidad' : 'unidades'} con precio.`,
+  };
+}
+
+/**
+ * Borrar un período.
+ *
+ * Las reservas ya hechas no se tocan: guardan su propio importe cotizado. Lo
+ * que se rompe son las noches futuras, y por eso el mensaje dice cuántas
+ * quedaron sin precio en vez de un «listo» a secas.
+ */
+export async function borrarPeriodo(periodoId: string): Promise<Resultado> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('borrar_periodo', { p_periodo: periodoId });
+
+  if (error) {
+    console.error('[borrarPeriodo] la base no dejó:', error.message);
+    return { ok: false, mensaje: mensajeDeError(error.message) };
+  }
+
+  const r = (data ?? {}) as Record<string, unknown>;
+  if (r.ok !== true) {
+    return {
+      ok: false,
+      mensaje: (typeof r.mensaje === 'string' && r.mensaje) || 'No pudimos borrarlo.',
+    };
+  }
+
+  const huecos = Number(r.noches_que_quedaron_sin_precio ?? 0);
+  return {
+    ok: true,
+    mensaje:
+      huecos > 0
+        ? `Borrado. Ojo: quedaron ${huecos} ${huecos === 1 ? 'noche' : 'noches'} reservables sin precio.`
+        : 'Borrado.',
+  };
 }
 
 /** Reabrir una fecha cerrada, por su id. */

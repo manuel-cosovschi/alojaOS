@@ -262,8 +262,53 @@ WITH esperado(orden, que, existe) AS (
   (86, 'ninguna seña vencida sigue ocupando noches',
        ((public.salud_del_vencimiento()->>'atrasadas')::integer = 0)),
 
+  -- --- 016: los precios desde el panel -----------------------------------
+  -- Las cuatro de la 016. Van con los permisos en la misma fila porque una
+  -- función que existe y no está concedida es igual de inútil que una que no
+  -- existe, y una concedida a `anon` es peor que las dos.
+  (93, 'periodos_del_complejo() existe y sólo la ve el dueño',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='periodos_del_complejo' AND pronamespace='public'::regnamespace)
+        AND has_function_privilege('authenticated', 'public.periodos_del_complejo(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.periodos_del_complejo(uuid)', 'EXECUTE')),
+  (94, 'guardar_periodo() existe y sólo la ve el dueño',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='guardar_periodo' AND pronamespace='public'::regnamespace)
+        AND has_function_privilege('authenticated',
+              'public.guardar_periodo(uuid,date,date,jsonb,text,uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon',
+              'public.guardar_periodo(uuid,date,date,jsonb,text,uuid)', 'EXECUTE')),
+  (95, 'borrar_periodo() existe y sólo la ve el dueño',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='borrar_periodo' AND pronamespace='public'::regnamespace)
+        AND has_function_privilege('authenticated', 'public.borrar_periodo(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.borrar_periodo(uuid)', 'EXECUTE')),
+  (96, 'salud_de_los_precios() existe y sólo la ve el dueño',
+       (SELECT count(*) = 1 FROM pg_proc
+         WHERE proname='salud_de_los_precios' AND pronamespace='public'::regnamespace)
+        AND has_function_privilege('authenticated', 'public.salud_de_los_precios(uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.salud_de_los_precios(uuid)', 'EXECUTE')),
+
+  -- Las cuatro son SECURITY DEFINER, así que saltean RLS: el aislamiento entre
+  -- complejos lo sostiene el `es_miembro()` de adentro, no una policy. Si
+  -- alguna perdiera el `search_path` fijo, un esquema plantado por el llamador
+  -- podría cambiar a qué tabla apuntan.
+  (97, 'y las cuatro tienen search_path fijo',
+       (SELECT count(*) = 4 FROM pg_proc
+         WHERE pronamespace='public'::regnamespace
+           AND proname IN ('periodos_del_complejo','guardar_periodo',
+                           'borrar_periodo','salud_de_los_precios')
+           AND 'search_path=public' = ANY (coalesce(proconfig, ARRAY[]::text[])))),
+
+  -- Nada que se llame `zz_borrar_a_mano_*`: eso es sobra de una prueba mía
+  -- contra producción, no código del repo. Está en supabase/a_mano/.
+  (98, 'no quedan funciones de prueba sueltas en public',
+       (SELECT count(*) = 0 FROM pg_proc
+         WHERE pronamespace='public'::regnamespace
+           AND proname LIKE 'zz_borrar_a_mano%')),
+
   -- --- RLS en las tablas --------------------------------------------------
-  (90, 'RLS prendido en todas las tablas de public',
+  (99, 'RLS prendido en todas las tablas de public',
        (SELECT count(*) = 0 FROM pg_class c
          WHERE c.relnamespace='public'::regnamespace
            AND c.relkind='r'

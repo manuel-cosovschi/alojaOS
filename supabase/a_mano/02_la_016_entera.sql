@@ -1,0 +1,63 @@
+-- ============================================
+-- Aplicar la 016 entera (esto SÍ bloquea)
+-- ============================================
+-- A diferencia del 01, esto no es limpieza: hasta que no se corra, **el panel
+-- de precios no guarda nada**. El dueño ve sus períodos y ve qué no se puede
+-- cotizar, pero el botón de guardar y el de borrar devuelven error.
+--
+-- ------------------------------------------------------------------
+-- Por qué quedó a medias
+-- ------------------------------------------------------------------
+-- `016_precios_desde_el_panel.sql` define cuatro funciones. Dos entraron por el
+-- conector y dos no:
+--
+--   periodos_del_complejo()   ✓ aplicada
+--   salud_de_los_precios()    ✓ aplicada
+--   guardar_periodo()         ✗ falta
+--   borrar_periodo()          ✗ falta
+--
+-- Las dos que faltan son las que escriben. El conector corta la llamada a los
+-- 60 segundos sin ejecutar nada cuando el SQL contiene sentencias que trata
+-- como destructivas —lo mismo que ya pasaba con `DROP`, ver el README— y lo
+-- comprobé: después de cada timeout la función no existe en el catálogo, así
+-- que no es que tarde, es que no llega.
+--
+-- Lo acoté hasta donde sirve: un `CREATE FUNCTION` con un `DELETE ... WHERE
+-- false` adentro entra; uno con un `UPDATE` no; `borrar_periodo()`, que sólo
+-- tiene un `DELETE`, tampoco. No busqué la regla exacta porque no cambia qué
+-- hay que hacer, y porque la alternativa —escribir el SQL de otra forma para
+-- que el detector no lo vea— sería esconderle al conector lo que la función
+-- hace. Una función que escribe tiene que leerse como una función que escribe.
+--
+-- ------------------------------------------------------------------
+-- Cómo correrlo
+-- ------------------------------------------------------------------
+-- No hace falta pegar este archivo: pegá
+-- `supabase/migrations/016_precios_desde_el_panel.sql` entero en el proyecto de
+-- Supabase → **SQL Editor** → Run. Es idempotente (`CREATE OR REPLACE`), así
+-- que volver a aplicar las dos que ya están no hace nada.
+--
+-- Después, correr `scripts/verificar-produccion.sql` en el mismo editor: las
+-- filas 93 a 98 tienen que dar `ok`. Las 94 y 95 son las que hoy dicen FALTA.
+--
+-- ------------------------------------------------------------------
+-- Para que esto no vuelva a pasar
+-- ------------------------------------------------------------------
+-- El repo ya tiene el camino bueno: `npm run db:migrate` (`scripts/migrate.ts`)
+-- aplica todas las migraciones por la Management API de Supabase, en orden, y
+-- se para en la primera que falla. No pasa por el conector, así que no tiene
+-- esta limitación. Necesita dos variables en `.env.local`:
+--
+--   SUPABASE_ACCESS_TOKEN  — un token personal de
+--                            https://supabase.com/dashboard/account/tokens
+--   SUPABASE_PROJECT_REF   — rlejzukedyzfnlatyjfk
+--
+-- Con eso, cada migración futura es un comando en vez de un copiar y pegar.
+
+-- Y esto es la sobra de una prueba mía contra producción: la creé para
+-- averiguar qué cuelga al conector. No la puede llamar nadie —le revoqué el
+-- EXECUTE a todos los roles— y está renombrada para que se vea que es basura.
+-- El `DROP` tampoco entra por el conector, así que va acá.
+--
+-- La fila 98 de `verificar-produccion.sql` comprueba que no esté.
+DROP FUNCTION IF EXISTS public.zz_borrar_a_mano_sobra_de_una_prueba();

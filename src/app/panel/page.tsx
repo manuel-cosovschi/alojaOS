@@ -7,6 +7,8 @@ import {
   avisosQueNoSalieron,
   unidadesDe,
   bloqueosDe,
+  periodosDe,
+  saludDeLosPrecios,
 } from '@/lib/panel';
 import { Senas } from '@/components/Senas';
 import { SaludDelReloj } from '@/components/SaludDelReloj';
@@ -17,6 +19,7 @@ import { salir } from '@/actions/sesion';
 import { direccionDelComplejo } from '@/lib/tenant';
 import { hoyISO } from '@/lib/fechas';
 import { Fechas } from '@/components/Fechas';
+import { Precios } from '@/components/Precios';
 
 /**
  * El panel del dueño.
@@ -49,13 +52,15 @@ export default async function Panel() {
   // esperarlas en fila haría que un dueño con tres complejos espere el triple.
   const porComplejo = await Promise.all(
     complejos.map(async (c) => {
-      const [senas, avisos, unidades, bloqueos] = await Promise.all([
+      const [senas, avisos, unidades, bloqueos, periodos, saludPrecios] = await Promise.all([
         senasPendientes(c.id),
         avisosQueNoSalieron(c.id),
         unidadesDe(c.id),
         bloqueosDe(c.id),
+        periodosDe(c.id),
+        saludDeLosPrecios(c.id),
       ]);
-      return { complejo: c, senas, avisos, unidades, bloqueos };
+      return { complejo: c, senas, avisos, unidades, bloqueos, periodos, saludPrecios };
     })
   );
 
@@ -83,7 +88,7 @@ export default async function Panel() {
             <SaludDelComprobante salud={saludComprobante} />
             {salud && <SaludDelReloj salud={salud} />}
 
-            {porComplejo.map(({ complejo, senas, avisos, unidades, bloqueos }) => (
+            {porComplejo.map(({ complejo, senas, avisos, unidades, bloqueos, periodos, saludPrecios }) => (
               <section key={complejo.id}>
                 <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
                   <h2 className="text-lg font-semibold">{complejo.nombre}</h2>
@@ -129,6 +134,21 @@ export default async function Panel() {
                     bloqueos={bloqueos}
                     hoy={hoyISO(complejo.zona_horaria)}
                     zonaHoraria={complejo.zona_horaria}
+                  />
+                </div>
+
+                {/* Los precios van al final porque es lo que se toca una vez
+                    por temporada, no todos los días. Pero su aviso de qué no se
+                    puede cotizar está adentro del bloque, así que una unidad
+                    invendible se ve sin tener que abrir nada. */}
+                <div className="mt-4">
+                  <Precios
+                    complejoId={complejo.id}
+                    unidades={unidades}
+                    periodos={periodos}
+                    salud={saludPrecios}
+                    moneda={complejo.moneda}
+                    hoy={hoyISO(complejo.zona_horaria)}
                   />
                 </div>
               </section>

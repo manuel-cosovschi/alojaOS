@@ -182,3 +182,96 @@ export async function bloqueosDe(complejoId: string): Promise<Bloqueo[]> {
   }
   return (data ?? []) as Bloqueo[];
 }
+
+/** El precio de una unidad en un período. `precio` null = no tiene. */
+export interface PrecioDeUnidad {
+  unidad_id: string;
+  codigo: string;
+  nombre: string;
+  precio: string | null;
+}
+
+export interface PeriodoDePrecio {
+  id: string;
+  desde: string;
+  hasta: string;
+  noches: number;
+  etiqueta: string | null;
+  precios: PrecioDeUnidad[];
+}
+
+export interface UnidadSinPrecio {
+  unidad_id: string;
+  codigo: string;
+  nombre: string;
+  noches: number;
+  desde: string;
+  periodos: number;
+}
+
+/**
+ * Qué no se puede cotizar.
+ *
+ * `sin_config: true` deja el resto de los campos sin definir, porque sin
+ * `ultima_fecha` no hay ventana sobre la que contar nada.
+ */
+export type SaludDeLosPrecios =
+  | {
+      esta_bien: false;
+      sin_config: true;
+      unidades: number;
+      mensaje: string;
+    }
+  | {
+      esta_bien: boolean;
+      sin_config: false;
+      unidades: number;
+      ventana_desde: string;
+      ventana_hasta: string;
+      ventana_vencida: boolean;
+      dias_hasta_el_cierre: number;
+      noches_sin_periodo: number;
+      primera_noche_sin_periodo: string | null;
+      unidades_sin_precio: UnidadSinPrecio[];
+    };
+
+/**
+ * Los períodos de precio del complejo, con una entrada por unidad.
+ *
+ * Las unidades sin precio vienen con `precio: null` y no omitidas: un hueco que
+ * no está en los datos es un hueco que la pantalla no puede mostrar, y
+ * mostrarlo es la mitad del punto.
+ */
+export async function periodosDe(complejoId: string): Promise<PeriodoDePrecio[]> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('periodos_del_complejo', { p_complejo: complejoId });
+
+  if (error) {
+    console.error('[periodosDe] la base devolvió un error:', error.message);
+    return [];
+  }
+  return (data ?? []) as PeriodoDePrecio[];
+}
+
+/**
+ * Qué del catálogo de precios no se puede vender.
+ *
+ * Esto no es un informe de cortesía: una unidad sin precio en un período queda
+ * invendible toda la temporada y en la pantalla no se ve nada raro —el
+ * calendario la muestra libre y recién al pedir el precio aparece que no hay—.
+ * Y `ultima_fecha` es una fecha que se pasa sola: el día que pasa, el
+ * calendario deja de ofrecer absolutamente todo.
+ *
+ * Devuelve null sólo si la consulta falló. Eso también se muestra, porque «no
+ * pude comprobarlo» no es «está bien».
+ */
+export async function saludDeLosPrecios(complejoId: string): Promise<SaludDeLosPrecios | null> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('salud_de_los_precios', { p_complejo: complejoId });
+
+  if (error) {
+    console.error('[saludDeLosPrecios] la base devolvió un error:', error.message);
+    return null;
+  }
+  return data as SaludDeLosPrecios;
+}

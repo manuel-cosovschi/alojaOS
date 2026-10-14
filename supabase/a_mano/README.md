@@ -4,17 +4,33 @@ Todas las migraciones de `supabase/migrations/` se aplican solas. Las de esta
 carpeta no, y el motivo es una limitación de la herramienta con la que me
 conecto al proyecto, no del esquema.
 
-**Qué pasa:** el conector de Supabase trata cualquier `DROP` como una operación
-destructiva y pide que una persona la confirme. En esta sesión esa confirmación
-no llega a ningún lado, así que la llamada se queda esperando y se corta a los
-60 segundos sin hacer nada. Lo comprobé con un `DROP FUNCTION IF EXISTS` de una
-función que no existe: también se cuelga. No es la base: no hay nada bloqueado
-ni esperando un lock, el `DROP` nunca llega.
+**Qué pasa:** el conector de Supabase trata algunas sentencias como operaciones
+destructivas y pide que una persona las confirme. En esta sesión esa
+confirmación no llega a ningún lado, así que la llamada se queda esperando y se
+corta a los 60 segundos **sin ejecutar nada**. Lo comprobé las dos veces
+mirando el catálogo después del timeout: lo que se cortó no está. No es la base:
+no hay nada bloqueado ni esperando un lock.
 
-**Qué hay acá hoy:** nada que bloquee. Lo único es
-`01_sacar_la_funcion_vieja.sql`, que es limpieza: borra una función que quedó
-corrida a un costado y que no puede llamar nadie. El sistema anda igual sin
-correrlo, y `verificar-produccion.sql` da todo `ok` con o sin él.
+Hasta ahora sabía que pasaba con `DROP`. Al aplicar la 016 descubrí que también
+pasa con `UPDATE` adentro de un `CREATE FUNCTION`, y con un `DELETE` según cómo
+esté escrito. No busqué la regla exacta: no cambia qué hay que hacer, y la
+alternativa —reescribir el SQL para que el detector no lo vea— sería esconderle
+a la herramienta lo que la función hace.
+
+**Qué hay acá hoy:**
+
+- `02_la_016_entera.sql` **bloquea**. Mientras no se corra, el panel de precios
+  muestra todo pero no guarda: faltan `guardar_periodo()` y `borrar_periodo()`.
+  Es pegar `supabase/migrations/016_precios_desde_el_panel.sql` en el SQL
+  Editor; es idempotente.
+- `01_sacar_la_funcion_vieja.sql` es limpieza y no bloquea nada: borra una
+  función que quedó corrida a un costado y que no puede llamar nadie.
+
+**El camino que evita todo esto:** `npm run db:migrate` aplica las migraciones
+por la Management API, sin pasar por el conector. Necesita
+`SUPABASE_ACCESS_TOKEN` (un token personal de
+<https://supabase.com/dashboard/account/tokens>) y `SUPABASE_PROJECT_REF` en
+`.env.local`. Con eso, cada migración futura es un comando.
 
 **Qué hacer, si algún día querés:** abrir el proyecto en Supabase → **SQL
 Editor**, pegar el contenido, y correrlo. O correrlo con el CLI de Supabase, que
