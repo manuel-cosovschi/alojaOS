@@ -148,7 +148,12 @@ WITH esperado(orden, que, existe) AS (
   -- alias, CBU y titular de cualquier complejo con una llamada. Migración 023.
   -- Desde la 024, `crear_reserva` NO se puede llamar desde afuera: la única
   -- forma de reservar es por nuestro servidor, que es el que sabe la IP.
-  (77, 'anon NO puede crear_reserva()',
+  --
+  -- Va en la 91 y no en la 77 —donde la puse primero— porque la 77 ya era la de
+  -- `estado_reserva`. Dos filas con el mismo número pasan igual, pero el día que
+  -- una falle el informe dice «falló la 77» y hay dos: el arnés tiene un chequeo
+  -- que justamente busca números repetidos, y lo encontró.
+  (91, 'anon NO puede crear_reserva()',
        NOT has_function_privilege('anon',
          'public.crear_reserva(text,uuid,date,date,smallint,text,text,text,text,jsonb,text,text,text)', 'EXECUTE')),
   (78, 'anon SÍ puede datos_para_transferir(), por el id de la reserva',

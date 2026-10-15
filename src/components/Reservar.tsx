@@ -43,6 +43,19 @@ export function Reservar({ complejo, ocupadas, hoy }: Props) {
 
   const unidad = complejo.unidades.find((u) => u.id === unidadId);
 
+  // Sólo las de esta unidad: las de otra no le impiden nada a esta.
+  //
+  // Va acá arriba, antes de cualquier `return`, porque los hooks tienen que
+  // llamarse siempre en el mismo orden. Estaba después del corte por
+  // «calendario sin cargar», así que si ese dato pasaba de vacío a cargado sin
+  // desmontar el componente, React veía un hook de más y tiraba la pantalla.
+  // Hoy el dato viene del servidor y no cambia en vivo, así que no se caía
+  // nunca —pero es una bomba puesta esperando el primer refresco en caliente—.
+  const ocupadasDeLaUnidad: Ocupada[] = useMemo(
+    () => ocupadas.filter((o) => o.unidad_id === unidadId),
+    [ocupadas, unidadId]
+  );
+
   if (!complejo.calendario) {
     return (
       <div className="rounded-2xl border border-black/10 bg-white/60 p-6">
@@ -66,12 +79,6 @@ export function Reservar({ complejo, ocupadas, hoy }: Props) {
     bloques: complejo.bloques_fijos,
     minimos: complejo.minimos_noches,
   };
-
-  // Sólo las de esta unidad: las de otra no le impiden nada a esta.
-  const ocupadasDeLaUnidad: Ocupada[] = useMemo(
-    () => ocupadas.filter((o) => o.unidad_id === unidadId),
-    [ocupadas, unidadId]
-  );
 
   const veredicto = checkIn && checkOut ? validar(reglas, checkIn, checkOut) : null;
 
