@@ -30,7 +30,15 @@ import { readFileSync } from 'node:fs';
 
 const PUERTO = process.env.ALOJAOS_PORT ?? '3000';
 const RAIZ = process.env.ALOJAOS_ROOT_DOMAIN ?? 'alojaos.test';
-const BASE = `http://${RAIZ}:${PUERTO}`;
+
+/**
+ * Contra dónde corre. Igual que la batería de huésped: el panel es lo que el
+ * dueño usa todos los días, así que probarlo sólo en local deja sin probar
+ * justo la mitad que el cliente toca. ALOJAOS_BASE=https://alojaos.shop la
+ * apunta al vivo.
+ */
+const BASE = (process.env.ALOJAOS_BASE ?? `http://${RAIZ}:${PUERTO}`).replace(/\/$/, '');
+const ES_LOCAL = !process.env.ALOJAOS_BASE;
 const SLUG = process.env.ALOJAOS_SLUG ?? 'cabanias-del-sol';
 
 function delEnv(clave: string): string {
@@ -41,15 +49,36 @@ function delEnv(clave: string): string {
   }
 }
 
-const MAIL = process.env.ALOJAOS_DEMO_EMAIL ?? 'duenio@ejemplo.test';
-const CLAVE = process.env.ALOJAOS_DEMO_CLAVE ?? '';
+/**
+ * Las credenciales del dueño de ejemplo, del archivo que las guarda.
+ *
+ * `sembrar-demo.mts` las deja en `.alojaos-demo.json` (600, fuera de git) y la
+ * batería de despliegue las lee de ahí. Ésta las pedía por variable de entorno
+ * nada más, así que correrla era buscar la clave en el historial de la consola
+ * —y una batería incómoda de correr es una batería que no se corre—.
+ */
+function delArchivoDemo(): { email?: string; clave?: string } {
+  try {
+    const j = JSON.parse(readFileSync('.alojaos-demo.json', 'utf-8')) as {
+      duenio?: { email?: string; clave?: string | null };
+    };
+    return { email: j.duenio?.email, clave: j.duenio?.clave ?? undefined };
+  } catch {
+    return {};
+  }
+}
+const DEMO = delArchivoDemo();
+
+const MAIL = process.env.ALOJAOS_DEMO_EMAIL ?? DEMO.email ?? 'duenio@ejemplo.test';
+const CLAVE = process.env.ALOJAOS_DEMO_CLAVE ?? DEMO.clave ?? '';
 const URL_SUPA = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? delEnv('NEXT_PUBLIC_SUPABASE_URL')).replace(/\/$/, '');
 const SERVICIO = process.env.SUPABASE_SERVICE_ROLE_KEY ?? delEnv('SUPABASE_SERVICE_ROLE_KEY');
 
 if (!CLAVE) {
   console.error(
-    '\n✗ Falta ALOJAOS_DEMO_CLAVE, la contraseña del dueño de ejemplo.\n' +
-      '  La imprime `npx tsx scripts/sembrar-demo.mts` cuando crea el usuario.\n'
+    '\n✗ No tengo la contraseña del dueño de ejemplo.\n' +
+      '  Sale de `.alojaos-demo.json`, que escribe `npx tsx scripts/sembrar-demo.mts`,\n' +
+      '  o de ALOJAOS_DEMO_CLAVE si querés pasarla a mano.\n'
   );
   process.exit(1);
 }
@@ -211,7 +240,7 @@ async function main() {
   console.log(`→ limpiando: borré ${await limpiar()} reserva(s) de una corrida anterior\n`);
 
   const navegador: Browser = await chromium.launch({
-    args: [`--host-resolver-rules=MAP *.${RAIZ} 127.0.0.1, MAP ${RAIZ} 127.0.0.1`],
+    args: ES_LOCAL ? [`--host-resolver-rules=MAP *.${RAIZ} 127.0.0.1, MAP ${RAIZ} 127.0.0.1`] : [],
   });
 
   try {

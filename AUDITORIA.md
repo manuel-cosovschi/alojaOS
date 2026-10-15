@@ -259,3 +259,57 @@ lo del último respaldo». Antes del primer cliente que paga conviene el plan.
 **Las dos claves que son tuyas**: la de servicio marcada TEMPORAL en Vercel y el
 token personal de Supabase, que es de la cuenta entera. Las dos se revocan desde
 tu panel.
+
+---
+
+## Segunda pasada: verificar en producción, no en el build
+
+Con los arreglos ya en vivo (`c78e450`, región gru1), correr todo contra
+`alojaos.shop` destapó cinco cosas más. Cuatro eran de los arneses mismos, y esa
+es la peor clase: un chequeo que no se puede correr donde importa es un chequeo
+que figura como si corriera.
+
+**1. Los arneses de navegador no se podían apuntar al vivo.** ✅ arreglado.
+`prueba:navegador` y `prueba:panel` armaban la dirección a mano, con `http://`
+fijo y el puerto pegado. O sea que las dos baterías que prueban el camino
+completo —el huésped reservando y el dueño aprobando— eran justamente las que
+sólo corrían en local, y «verificar en producción» quedaba en mirar la página.
+Ahora las dos aceptan `ALOJAOS_BASE`. Corridas contra el vivo: 33 de 33 la del
+huésped (reserva de verdad, comprobante subido al bucket de producción, aviso
+por mail `ENVIADO` con id del proveedor) y 55 de 55 la del panel.
+
+**2. El arnés del panel pedía la clave por variable de entorno.** ✅ arreglado.
+La contraseña del dueño de ejemplo está en `.alojaos-demo.json`, que es de donde
+la lee la batería de despliegue; ésta no la leía, así que correrla era buscar la
+clave en el historial de la consola. Ahora sale del archivo.
+
+**3. ESLint nunca se configuró.** ✅ arreglado. `npm run lint` abría el asistente
+de Next —«¿cómo querés configurar ESLint?»— y se quedaba esperando una tecla:
+colgaba en cualquier cosa que no fuera una persona mirando la pantalla. Con la
+configuración puesta encontró dos cosas en el primer intento, una de ellas un
+bug de verdad (la que sigue). Ahora el lint corre dentro de `npm test`.
+
+**4. Un hook de React llamado condicionalmente.** ✅ arreglado. En
+`Reservar.tsx` el `useMemo` que filtra las noches ocupadas estaba *después* del
+corte por «calendario sin cargar». Si ese dato pasaba de vacío a cargado sin
+desmontar el componente, React veía un hook de más y tiraba la pantalla de
+reservas. Hoy el dato viene del servidor y no cambia en vivo, así que no se caía
+nunca —era una bomba puesta esperando el primer refresco en caliente—. Movido
+arriba de todos los `return`.
+
+**5. El verificador tenía dos filas con el número 77.** ✅ arreglado. Al agregar
+«anon NO puede crear_reserva()» le puse el número de la fila de
+`estado_reserva`. Las dos pasaban, así que el total seguía dando 91 de 91: lo
+encontró el chequeo del arnés que busca números repetidos, no la corrida. Un
+informe que dijera «falló la 77» habría mandado a mirar la fila equivocada.
+
+**Y una del entorno, no del producto:** el arnés de SQL moría en la primera línea
+corriendo como root, porque Postgres se niega a arrancar así (a propósito). En
+una consola de persona no pasa nunca; en un contenedor de CI o de un agente,
+siempre. Ahora, si es root, levanta el servidor con el usuario `postgres`. 330 de
+330, incluidas las dos escrituras simultáneas sobre la misma noche.
+
+**El ataque, re-probado contra el vivo.** Las tres llamadas con la clave
+pública: `crear_reserva` → 404 (PostgREST ya no la expone), `datos_para_transferir`
+por slug → 404 (no existe más esa firma), `exportar_complejo` → 401 permiso
+denegado.

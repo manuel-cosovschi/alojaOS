@@ -34,16 +34,42 @@ exec 3>&1
 if [ "${1:-}" = "--huellas" ]; then exec 1>&2; fi
 
 TMP="$(mktemp -d)"
+
+# Postgres se niega a arrancar como root, a propósito: un servidor que corre
+# como root puede escribir cualquier archivo de la máquina. En una consola de
+# persona eso no pasa nunca, pero los contenedores de CI y los agentes corren
+# como root, y ahí el arnés moría en la primera línea con un error de initdb.
+# Un arnés que no se puede correr en el lugar donde se revisa el código es un
+# arnés que no se corre. Así que si somos root, el servidor lo levanta el
+# usuario `postgres`, que es exactamente para esto.
+#
+# `COMO` es el prefijo que ejecuta cada comando del servidor; vacío cuando ya
+# corremos sin privilegios, que es el caso normal.
+COMO=""
+if [ "$(id -u)" = "0" ]; then
+  SIN_PRIVILEGIOS="${PG_USUARIO:-postgres}"
+  id "$SIN_PRIVILEGIOS" >/dev/null 2>&1 || {
+    echo "✗ Corriendo como root y no existe el usuario '$SIN_PRIVILEGIOS'."
+    echo "  Corré el arnés como un usuario común, o exportá PG_USUARIO con uno que exista."
+    exit 1
+  }
+  COMO="setpriv --reuid=$SIN_PRIVILEGIOS --regid=$(id -g "$SIN_PRIVILEGIOS") --clear-groups --"
+  # El directorio es de root y con setpriv el servidor ya no podría escribirlo.
+  chown -R "$SIN_PRIVILEGIOS" "$TMP"
+  chmod 700 "$TMP"
+fi
+
 limpiar() {
-  pg_ctl -D "$TMP/data" stop -m immediate >/dev/null 2>&1 || true
+  $COMO pg_ctl -D "$TMP/data" stop -m immediate >/dev/null 2>&1 || true
   rm -rf "$TMP"
 }
 trap limpiar EXIT
 
 echo "→ levantando Postgres en $TMP"
-initdb -D "$TMP/data" -U postgres --auth=trust >/dev/null
+$COMO initdb -D "$TMP/data" -U postgres --auth=trust >/dev/null
 mkdir -p "$TMP/run"
-pg_ctl -D "$TMP/data" -o "-k $TMP/run -c listen_addresses=''" -l "$TMP/log" start >/dev/null
+[ -n "$COMO" ] && chown "${SIN_PRIVILEGIOS:-root}" "$TMP/run"
+$COMO pg_ctl -D "$TMP/data" -o "-k $TMP/run -c listen_addresses=''" -l "$TMP/log" start >/dev/null
 PSQL="psql -h $TMP/run -U postgres -v ON_ERROR_STOP=1"
 
 createdb -h "$TMP/run" -U postgres alojaos >/dev/null

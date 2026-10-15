@@ -63,7 +63,11 @@ import {
 } from '@/lib/precios-alojaos';
 import { Calculadora } from './Calculadora';
 import { Captura, Marco, Telefono } from './Pantallas';
-import { CAPTURAS, CAPTURAS_SACADAS_EL } from './capturas.generado';
+// CAPTURAS ya no se importa: el enlace al demo sale de `direccionDelComplejo()`.
+// Usar el campo `de` de las capturas como enlace fue el bug que puso
+// `http://cabanias-del-sol.alojaos.test:3000` en la página en vivo: ese campo
+// dice de dónde se sacó la imagen, no a dónde mandar a una persona.
+import { CAPTURAS_SACADAS_EL } from './capturas.generado';
 import { Revelar } from './Revelar';
 import { Video, DemoEmbebido } from './Video';
 import { VIDEOS_GRABADOS_EL } from './videos.generado';

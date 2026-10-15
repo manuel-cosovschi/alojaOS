@@ -31,7 +31,26 @@ import { readFileSync } from 'node:fs';
 const PUERTO = process.env.ALOJAOS_PORT ?? '3000';
 const SLUG = process.env.ALOJAOS_SLUG ?? 'cabanias-del-sol';
 const RAIZ = process.env.ALOJAOS_ROOT_DOMAIN ?? 'alojaos.test';
-const BASE = `http://${SLUG}.${RAIZ}:${PUERTO}`;
+
+/**
+ * Contra dónde corre la batería.
+ *
+ * El default es el entorno local. Pero la regla del proyecto es que un build
+ * que compila no es una función que anda: lo único que prueba que un huésped
+ * puede reservar es un huésped reservando en el dominio que le vendemos. Antes
+ * esto estaba armado a mano —`http://` fijo y puerto pegado— así que la batería
+ * que prueba el camino completo de la reserva era justamente la que no se podía
+ * apuntar al vivo, y la verificación en producción quedaba en mirar la página.
+ *
+ * Con ALOJAOS_BASE=https://cabanias-del-sol.alojaos.shop corre contra el vivo.
+ * Las aserciones de marca son las de ese complejo, así que apuntarla a otro
+ * slug falla por el nombre y el color: es a propósito, la batería dice contra
+ * quién corre.
+ */
+const BASE = (process.env.ALOJAOS_BASE ?? `http://${SLUG}.${RAIZ}:${PUERTO}`).replace(/\/$/, '');
+
+/** Contra el vivo el DNS resuelve solo; el mapeo es cosa del entorno local. */
+const ES_LOCAL = !process.env.ALOJAOS_BASE;
 
 /** Con este nombre reserva la batería, y por este nombre se limpia. */
 const HUESPED = 'Prueba de Navegador';
@@ -189,7 +208,7 @@ async function main() {
   // mano —y está bien que no—, así que se le resuelve el nombre al navegador,
   // que es exactamente lo que en producción hace el comodín del DNS.
   const navegador = await chromium.launch({
-    args: [`--host-resolver-rules=MAP *.${RAIZ} 127.0.0.1`],
+    args: ES_LOCAL ? [`--host-resolver-rules=MAP *.${RAIZ} 127.0.0.1`] : [],
   });
   const contexto = await navegador.newContext();
   const page = await contexto.newPage();
