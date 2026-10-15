@@ -1,32 +1,32 @@
 {
-  "sacadas_el": "2026-10-15T05:27:28.948Z",
-  "commit": "a1346edaeb630bf045a65e0a0e6c89af44957d47",
-  "huella_interfaz": "8bf45a4a4daf9ded581e4f368dccd5f3",
-  "base": "http://alojaos.test:3000",
+  "sacadas_el": "2026-10-15T05:50:18.647Z",
+  "commit": "2e757a77cda76598b9e982ae2cad5778374b3d42",
+  "huella_interfaz": "3acd8fdf2c0fba214d7e6a198b1b9e7b",
+  "base": "https://alojaos.shop",
   "capturas": [
     {
       "archivo": "huesped-eligiendo.png",
-      "de": "http://cabanias-del-sol.alojaos.test:3000/",
+      "de": "https://cabanias-del-sol.alojaos.shop/",
       "que": "El calendario, las noches elegidas y la seña"
     },
     {
       "archivo": "huesped-transferir.png",
-      "de": "http://cabanias-del-sol.alojaos.test:3000/",
+      "de": "https://cabanias-del-sol.alojaos.shop/",
       "que": "El plazo de la seña, el alias y el CBU para transferir"
     },
     {
       "archivo": "panel-senas.png",
-      "de": "http://alojaos.test:3000/panel",
+      "de": "https://alojaos.shop/panel",
       "que": "Las señas esperando, con su comprobante y su plazo"
     },
     {
       "archivo": "panel-precios.png",
-      "de": "http://alojaos.test:3000/panel",
+      "de": "https://alojaos.shop/panel",
       "que": "Los precios por temporada, cargados desde el panel"
     },
     {
       "archivo": "panel-fechas.png",
-      "de": "http://alojaos.test:3000/panel",
+      "de": "https://alojaos.shop/panel",
       "que": "Las fechas cerradas a mano, y el aviso de qué falta"
     }
   ]

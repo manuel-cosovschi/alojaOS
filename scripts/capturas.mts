@@ -130,6 +130,40 @@ async function borrarLaReservaDeLasCapturas(): Promise<string> {
   return `borré ${borradas.length} reserva(s) de las capturas`;
 }
 
+/**
+ * Corta si en la lista de señas del demo hay alguien que no sea el huésped de
+ * estas capturas.
+ *
+ * La pantalla de señas muestra nombre, mail y teléfono de cada huésped: una
+ * captura de esa lista con una reserva que no es nuestra publica los datos de
+ * esa persona en la página de venta. Pasó el 15/10 con «Prueba de Navegador»,
+ * que la batería de navegador dejaba viva en producción.
+ */
+async function nadieAjenoEnLaLista(): Promise<void> {
+  if (!URL_SUPA || !SERVICIO) {
+    throw new Error(
+      'Sin clave de servicio no puedo comprobar que la lista de señas sea sólo del huésped\n' +
+        '   de las capturas, y sacar la foto a ciegas puede publicar datos de otra persona.'
+    );
+  }
+  const res = await fetch(
+    `${URL_SUPA}/rest/v1/reservas?estado=eq.HOLD_TRANSFER` +
+      `&huesped_email=neq.${encodeURIComponent(MAIL_HUESPED)}` +
+      '&select=huesped_nombre,huesped_email,check_in,check_out',
+    { headers: { apikey: SERVICIO, Authorization: `Bearer ${SERVICIO}` } }
+  );
+  if (!res.ok) throw new Error(`no pude revisar las señas del demo: HTTP ${res.status}`);
+  const ajenas = (await res.json()) as Array<{ huesped_nombre: string; check_in: string; check_out: string }>;
+  if (ajenas.length > 0) {
+    throw new Error(
+      'La lista de señas tiene reservas que no son de estas capturas:\n   ' +
+        ajenas.map((r) => `«${r.huesped_nombre}» ${r.check_in} → ${r.check_out}`).join('\n   ') +
+        '\n   Sacar la foto así publicaría esos datos en la página de venta.' +
+        '\n   Resolvelas o borralas desde el panel, y volvé a correr `npm run capturas`.'
+    );
+  }
+}
+
 async function main() {
   mkdirSync(DESTINO, { recursive: true });
 
@@ -247,6 +281,26 @@ async function main() {
     if ((await senas.count()) > 0) {
       await senas.scrollIntoViewIfNeeded();
       await panel.waitForTimeout(200);
+
+      // Antes de disparar: que en la lista no haya nadie más que el huésped de
+      // estas capturas.
+      //
+      // Esto no es una precaución teórica. El 15/10 la batería de navegador
+      // corrió contra producción, dejó su reserva viva —limpiaba sólo al
+      // empezar— y la corrida de capturas que vino después fotografió el panel
+      // con «Prueba de Navegador» adentro, con su mail y su teléfono, lista
+      // para publicarse en la página de venta. La batería ya limpia al
+      // terminar, pero cualquier otra cosa puede dejar una reserva en el demo:
+      // la única garantía es mirar la foto antes de sacarla.
+      //
+      // Corta en vez de avisar porque una captura con datos ajenos no se
+      // arregla mirando la consola después: se publica.
+      //
+      // Se le pregunta a la base y no al texto de la pantalla: la pantalla
+      // habría que leerla con expresiones regulares que adivinen cuál línea es
+      // un nombre, y eso se rompe el día que cambie el orden de los renglones.
+      await nadieAjenoEnLaLista();
+
       await guardar(senas, 'panel-senas.png', `${BASE}/panel`, 'Las señas esperando, con su comprobante y su plazo');
     } else {
       console.log('  … no hay señas esperando en el demo, así que no hay captura de esa pantalla');
