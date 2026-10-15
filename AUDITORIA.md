@@ -313,3 +313,30 @@ siempre. Ahora, si es root, levanta el servidor con el usuario `postgres`. 330 d
 pública: `crear_reserva` → 404 (PostgREST ya no la expone), `datos_para_transferir`
 por slug → 404 (no existe más esa firma), `exportar_complejo` → 401 permiso
 denegado.
+
+---
+
+## Tercera pasada: lo que apareció por poder correr los arneses en producción
+
+Arreglar el primer punto de la segunda pasada —poder apuntar las baterías al
+vivo— destapó enseguida el problema que ese arreglo creaba.
+
+**6. La batería de navegador dejaba su reserva viva en producción.** ✅
+arreglado. Limpiaba sólo al empezar, que alcanzaba mientras corría contra una
+base de juguete. Contra producción no: la reserva queda en el panel del dueño
+hasta la próxima corrida. Y pasó lo peor que podía pasar con eso: `npm run
+capturas` corrió después y sacó la foto del panel con **«Prueba de Navegador»
+adentro, con su mail y su teléfono**, lista para publicarse en la página de
+venta. Ahora limpia también al terminar, y también cuando se corta a la mitad.
+
+**7. Y el arreglo de fondo: el script de capturas no miraba lo que fotografiaba.**
+✅ arreglado. Que la batería limpie no alcanza —cualquier cosa puede dejar una
+reserva en el demo—. Antes de disparar la foto del panel, el script le pregunta a
+la base si hay alguna seña en espera que no sea la del huésped de las capturas, y
+**corta** si la hay, nombrando cuál. No avisa: corta. Una captura con datos de
+otra persona no se arregla mirando la consola después, se publica.
+
+Probado sembrando una reserva ajena a propósito: el script se negó a sacar la
+foto, nombró al intruso y salió con código 1.
+
+Las capturas se rehicieron con el demo limpio.

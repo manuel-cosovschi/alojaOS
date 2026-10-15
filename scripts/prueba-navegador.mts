@@ -84,7 +84,7 @@ function delEnv(clave: string): string {
  *
  * Se borra por el nombre del huésped, que es de la batería y de nadie más.
  */
-async function limpiarLoDeAntes(): Promise<string> {
+async function limpiarLasReservasDeLaPrueba(): Promise<string> {
   const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? delEnv('NEXT_PUBLIC_SUPABASE_URL')).replace(/\/$/, '');
   const servicio = process.env.SUPABASE_SERVICE_ROLE_KEY ?? delEnv('SUPABASE_SERVICE_ROLE_KEY');
 
@@ -105,8 +105,8 @@ async function limpiarLoDeAntes(): Promise<string> {
     if (!res.ok) return `no pude limpiar en Supabase: HTTP ${res.status}`;
     const borradas = (await res.json()) as unknown[];
     return borradas.length === 0
-      ? 'la base de Supabase estaba limpia'
-      : `borré ${borradas.length} reserva(s) en Supabase que había dejado una corrida anterior`;
+      ? 'no quedaba ninguna reserva de la prueba en Supabase'
+      : `borré ${borradas.length} reserva(s) de la prueba en Supabase`;
   }
 
   // Contra el Postgres de `dev:local`. Cuántas borró lo contesta la base, no el
@@ -127,8 +127,8 @@ async function limpiarLoDeAntes(): Promise<string> {
     );
     const cuantas = salida.trim();
     return cuantas === '0'
-      ? 'la base estaba limpia'
-      : `borré ${cuantas} reserva(s) que había dejado una corrida anterior`;
+      ? 'no quedaba ninguna reserva de la prueba'
+      : `borré ${cuantas} reserva(s) de la prueba`;
   } catch {
     // Sin psql, o con la base en otro puerto. No se corta: si quedó algo
     // ocupado, `tocarDia()` lo va a decir con todas las letras.
@@ -201,7 +201,7 @@ async function tocarDia(page: Page, etiquetaAria: string) {
 }
 
 async function main() {
-  console.log(`→ ${await limpiarLoDeAntes()}\n`);
+  console.log(`→ ${await limpiarLasReservasDeLaPrueba()}\n`);
 
   // El `Host` decide qué complejo se sirve, así que la prueba tiene que pedir
   // por el nombre de verdad. Chromium no permite sobreescribir esa cabecera a
@@ -579,6 +579,18 @@ async function main() {
 
   await navegador.close();
 
+  // Y limpia también al terminar, no sólo al empezar.
+  //
+  // Limpiar sólo al empezar alcanzaba mientras esto corría contra una base de
+  // juguete. Contra producción no: la reserva de la batería se queda viva en el
+  // panel del dueño hasta la próxima corrida, y lo que pase en el medio la ve.
+  // Pasó: `npm run capturas` corrió después y sacó la foto del panel con
+  // «Prueba de Navegador» adentro, lista para publicarse en la página de venta.
+  //
+  // Va después de cerrar el navegador y antes de contar las fallas, para que
+  // limpie aunque la batería haya fallado.
+  console.log(`\n→ ${await limpiarLasReservasDeLaPrueba()}`);
+
   console.log(fallas === 0 ? '\n✓ todo bien' : `\n✗ ${fallas} fallas`);
   process.exit(fallas === 0 ? 0 : 1);
 }
@@ -600,7 +612,16 @@ async function irAlMesAtras(page: Page, etiqueta: string) {
   );
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   console.error('\n✗ la prueba se cortó:', e);
+  // Si se cortó a la mitad puede haber quedado una reserva escrita, y contra
+  // producción eso queda a la vista del dueño y de las capturas. Limpiar acá
+  // también: el error ya se imprimió, así que si la limpieza falla se dice y
+  // se sale igual con el código de falla, que es lo que importa.
+  try {
+    console.error(`→ ${await limpiarLasReservasDeLaPrueba()}`);
+  } catch (otro) {
+    console.error('→ y tampoco pude limpiar:', otro);
+  }
   process.exit(1);
 });
