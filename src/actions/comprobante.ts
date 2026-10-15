@@ -226,10 +226,21 @@ export async function subirComprobante(
 }
 
 /** Dónde transferir, según lo que cargó el dueño. */
+/**
+ * Dónde transferir, para una reserva que está esperando la seña.
+ *
+ * Pide el id de la RESERVA y no el slug del complejo, y ése es el arreglo: con
+ * el slug —que es público— cualquiera obtenía alias, CBU y titular con una
+ * llamada, y con la lista de slugs se armaba un «negocio + CBU + WhatsApp» de
+ * toda la plataforma, que es el kit de una estafa de reservas falsas.
+ *
+ * El id de una reserva lo tiene el huésped que acaba de hacerla. Un robot que
+ * recorre direcciones, no.
+ */
 export async function datosParaTransferir(
-  slug: string
+  reservaId: string
 ): Promise<{ datos: string | null; whatsapp: string | null }> {
-  const { data, error } = await clienteServidor().rpc('datos_para_transferir', { p_slug: slug });
+  const { data, error } = await clienteServidor().rpc('datos_para_transferir', { p_reserva: reservaId });
 
   if (error) {
     console.error('[datosParaTransferir] la base devolvió un error:', error.message);

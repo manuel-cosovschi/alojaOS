@@ -27,13 +27,12 @@ interface Props {
   ocupadas: Array<{ unidad_id: string; codigo: string; check_in: string; check_out: string }>;
   hoy: DiaISO;
   /** Dónde transferir, como lo escribió el dueño. Puede no estar cargado. */
-  datosTransferencia: string | null;
 }
 
 const plata = (n: number, moneda: string) =>
   new Intl.NumberFormat('es-AR', { style: 'currency', currency: moneda, maximumFractionDigits: 0 }).format(n);
 
-export function Reservar({ complejo, ocupadas, hoy, datosTransferencia }: Props) {
+export function Reservar({ complejo, ocupadas, hoy }: Props) {
   const [unidadId, setUnidadId] = useState<string>(complejo.unidades[0]?.id ?? '');
   const [checkIn, setCheckIn] = useState<DiaISO | null>(null);
   const [checkOut, setCheckOut] = useState<DiaISO | null>(null);
@@ -131,8 +130,8 @@ export function Reservar({ complejo, ocupadas, hoy, datosTransferencia }: Props)
         venceEl={resultado.venceEl}
         zonaHoraria={complejo.zona_horaria}
         noches={resultado.noches}
-        datosTransferencia={datosTransferencia}
-        whatsapp={complejo.whatsapp}
+        datosTransferencia={resultado.datosTransferencia}
+        whatsapp={resultado.whatsapp ?? complejo.whatsapp}
       />
     );
   }

@@ -189,7 +189,14 @@ async function limpiar(): Promise<number> {
 async function senaDelVecino(): Promise<{ id: string }> {
   const res = await fetch(`${URL_BASE}/rest/v1/rpc/crear_reserva`, {
     method: 'POST',
-    headers: { apikey: PUBLICA, Authorization: `Bearer ${PUBLICA}`, 'Content-Type': 'application/json' },
+    // Con la clave de SERVICIO, porque desde la migración 024 `crear_reserva`
+    // está revocada de `anon`: la única forma de reservar es por nuestro
+    // servidor, y acá esta batería hace de servidor para armarse su caso.
+    //
+    // Que use la de servicio para PREPARAR el caso no debilita lo que prueba:
+    // lo que se comprueba más abajo —que un dueño no vea ni toque lo del
+    // otro— se hace con la sesión de cada uno, no con esta clave.
+    headers: { apikey: SERVICIO, Authorization: `Bearer ${SERVICIO}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       p_slug: VECINO_SLUG,
       p_unidad: VECINO_UNIDAD,

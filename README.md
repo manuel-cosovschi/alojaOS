@@ -489,3 +489,14 @@ Vale anotar por qué también era un problema de producto: la API de WhatsApp pi
 por cliente, una cuenta de Meta Business, verificación del negocio y un número
 de teléfono dedicado —no el celular del dueño—. Eso son días de espera de Meta,
 con riesgo de rechazo, así que ningún plan que se active solo podía incluirlo.
+
+## Dónde corre esto, y por qué importa
+
+El servidor corre en **`gru1` (San Pablo)** y está fijado en `vercel.json`. No
+es un detalle de infraestructura: la base de Supabase está en `sa-east-1`, y
+hasta el 15/10 las funciones corrían en `iad1` (Virginia), así que **cada
+consulta cruzaba el continente dos veces**. Medido contra producción, eso eran
+1.403 ms hasta el primer byte en la página de un complejo y 2.133 ms en la
+comercial.
+
+Si algún día se cambia la región de la base, hay que cambiar ésta con ella.

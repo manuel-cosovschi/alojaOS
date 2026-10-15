@@ -27,7 +27,8 @@
     "huellas": "tsx scripts/huellas.mts",
     "capturas": "tsx scripts/capturas.mts",
     "og": "tsx scripts/og.mts",
-    "videos": "tsx scripts/videos.mts"
+    "videos": "tsx scripts/videos.mts",
+    "respaldo": "tsx scripts/respaldo.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

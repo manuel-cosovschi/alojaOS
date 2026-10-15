@@ -144,11 +144,22 @@ WITH esperado(orden, que, existe) AS (
        NOT has_function_privilege('anon', 'public.liberar_vencidas(uuid)', 'EXECUTE')),
   (77, 'anon SÍ puede estado_reserva() (la usa el huésped)',
        has_function_privilege('anon', 'public.estado_reserva(uuid)', 'EXECUTE')),
-  (78, 'anon SÍ puede datos_para_transferir()',
-       has_function_privilege('anon', 'public.datos_para_transferir(text)', 'EXECUTE')),
-  (79, 'anon SÍ puede crear_reserva() (es quien reserva)',
-       has_function_privilege('anon',
-         'public.crear_reserva(text,uuid,date,date,smallint,text,text,text,text,jsonb,text,text)', 'EXECUTE')),
+  -- Por el id de la reserva, no por el slug: con el slug cualquiera obtenía
+  -- alias, CBU y titular de cualquier complejo con una llamada. Migración 023.
+  -- Desde la 024, `crear_reserva` NO se puede llamar desde afuera: la única
+  -- forma de reservar es por nuestro servidor, que es el que sabe la IP.
+  (77, 'anon NO puede crear_reserva()',
+       NOT has_function_privilege('anon',
+         'public.crear_reserva(text,uuid,date,date,smallint,text,text,text,text,jsonb,text,text,text)', 'EXECUTE')),
+  (78, 'anon SÍ puede datos_para_transferir(), por el id de la reserva',
+       has_function_privilege('anon', 'public.datos_para_transferir(uuid)', 'EXECUTE')),
+  -- La 79 decía «anon SÍ puede crear_reserva(), es quien reserva». Era cierto y
+  -- era el agujero: la auditoría del 15/10 llamó a esa función desde la línea de
+  -- comandos y tomó catorce noches en un segundo. Ahora la única forma de
+  -- reservar es por nuestro servidor, que es el que sabe de qué IP viene.
+  (79, 'service_role SÍ puede crear_reserva() (es por donde pasa ahora)',
+       has_function_privilege('service_role',
+         'public.crear_reserva(text,uuid,date,date,smallint,text,text,text,text,jsonb,text,text,text)', 'EXECUTE')),
 
   -- La forma fuerte de la pregunta anterior: en vez de revisar los permisos por
   -- defecto, se enumera TODO `public` y se compara con la lista de lo que el
@@ -168,7 +179,9 @@ WITH esperado(orden, que, existe) AS (
          WHERE p.pronamespace = 'public'::regnamespace
            AND p.prokind = 'f'
            AND has_function_privilege('anon', p.oid, 'EXECUTE')
-       ) = ARRAY['complejo_publico','cotizar_estadia','crear_reserva',
+       -- `crear_reserva` ya no está: desde la 024 la superficie pública es
+       -- sólo de lectura. Lo único que escribía se fue a nuestro servidor.
+       ) = ARRAY['complejo_publico','cotizar_estadia',
                  'datos_para_transferir','estado_reserva','noches_ocupadas']),
 
   -- Sin `search_path` fijo, una función SECURITY DEFINER resuelve los nombres
@@ -460,4 +473,32 @@ SELECT orden,
        que AS "lo que el repo dice que tiene que haber",
        CASE WHEN existe THEN 'ok' ELSE 'FALTA' END AS resultado
   FROM esperado
- ORDER BY orden;
+ UNION ALL
+-- Los frenos de la migración 023. Sin esto, cualquiera traba el calendario de
+-- un complejo con un script de diez líneas: está probado, no supuesto.
+SELECT 86, 'limites_de_reserva() existe',
+       CASE WHEN EXISTS (SELECT 1 FROM pg_proc WHERE proname='limites_de_reserva') THEN 'ok' ELSE 'FALTA' END
+UNION ALL
+SELECT 87, 'crear_reserva frena por mail, por complejo y por ritmo',
+       CASE WHEN (SELECT prosrc FROM pg_proc WHERE proname='crear_reserva') LIKE '%demasiadas_tuyas%'
+             AND (SELECT prosrc FROM pg_proc WHERE proname='crear_reserva') LIKE '%complejo_saturado%'
+             AND (SELECT prosrc FROM pg_proc WHERE proname='crear_reserva') LIKE '%muy_rapido%'
+            THEN 'ok' ELSE 'FALTA' END
+UNION ALL
+SELECT 88, 'datos_para_transferir NO acepta el slug',
+       CASE WHEN NOT EXISTS (
+              SELECT 1 FROM pg_proc WHERE proname='datos_para_transferir'
+               AND pg_get_function_identity_arguments(oid)='p_slug text')
+            THEN 'ok' ELSE 'FALTA' END
+UNION ALL
+SELECT 89, 'datos_para_transferir pide el id de la reserva',
+       CASE WHEN EXISTS (
+              SELECT 1 FROM pg_proc WHERE proname='datos_para_transferir'
+               AND pg_get_function_identity_arguments(oid)='p_reserva uuid')
+            THEN 'ok' ELSE 'FALTA' END
+UNION ALL
+SELECT 90, 'exportar_complejo() existe y NO la puede llamar un visitante',
+       CASE WHEN EXISTS (SELECT 1 FROM pg_proc WHERE proname='exportar_complejo')
+             AND NOT has_function_privilege('anon', (SELECT oid FROM pg_proc WHERE proname='exportar_complejo'), 'EXECUTE')
+            THEN 'ok' ELSE 'FALTA' END
+ORDER BY orden;

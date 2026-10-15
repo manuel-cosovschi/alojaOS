@@ -672,8 +672,14 @@ BEGIN
      AND has_function_privilege('anon', p.oid, 'EXECUTE');
 
   -- La superficie pública del producto, completa y a propósito: la página de
-  -- reservas no tiene sesión, así que estas cinco se llaman sin cuenta.
-  v_esperado := ARRAY['complejo_publico','cotizar_estadia','crear_reserva',
+  -- reservas no tiene sesión, así que éstas se llaman sin cuenta.
+  --
+  -- `crear_reserva` **no está**, y ése es el cambio de la migración 024. Era la
+  -- única que escribía, y la auditoría del 15/10 la llamó desde la línea de
+  -- comandos con la clave publicable para tomar catorce noches en un segundo.
+  -- Ahora la reserva pasa por nuestro servidor, que es el único que sabe de qué
+  -- IP viene. Lo que queda abierto es sólo lectura.
+  v_esperado := ARRAY['complejo_publico','cotizar_estadia',
                       'datos_para_transferir','estado_reserva','noches_ocupadas'];
 
   PERFORM pg_temp.verificar('`anon` puede ejecutar exactamente las públicas, y ninguna más',
@@ -1921,9 +1927,14 @@ BEGIN
          NULL, 'Alias: posada.precios / CBU 0000003100000000000001');
   PERFORM pg_temp.verificar('y cuando se carga, deja de faltar',
     (v->>'falta_donde_transferir')::boolean = false, v::text);
+  -- Y que el huésped lo vea. Desde la migración 023 esto se pide con el id de
+  -- la RESERVA y no con el slug: con el slug cualquiera obtenía alias, CBU y
+  -- titular de cualquier complejo con una sola llamada.
   PERFORM pg_temp.verificar('y el huésped lo ve en los datos para transferir',
-    (public.datos_para_transferir('posada-de-precios')->>'datos_transferencia')
-      LIKE 'Alias: posada.precios%');
+    (SELECT (public.datos_para_transferir(r.id)->>'datos_transferencia') LIKE 'Alias: posada.precios%'
+       FROM reservas r
+      WHERE r.complejo_id = v_complejo AND r.estado = 'HOLD_TRANSFER'
+      LIMIT 1));
 
   -- ----------------------------------------------------------------
   -- El WhatsApp se limpia, no se rechaza
@@ -2549,6 +2560,154 @@ END $$;
 -- ============================================
 -- Resultado
 -- ============================================
+-- ============================================
+-- 21. Que nadie pueda trabar el calendario
+-- ============================================
+-- La auditoría del 15/10 probó que con la clave publicable se podían tomar
+-- catorce noches en menos de un segundo, sin abrir la página y sin ningún
+-- freno. Esto comprueba los tres límites de la migración 023 contra
+-- `crear_reserva()`, que es por donde pasa el ataque — y no contra las cuentas
+-- sueltas, porque lo que importa es que la reserva NO entre.
+\echo ''
+\echo '→ los frenos de crear_reserva'
+
+-- Con su propio complejo, para no depender de qué noches dejaron libres los
+-- bloques de arriba. Lo que se prueba acá son los frenos, no el calendario.
+INSERT INTO complejos (id, slug, nombre, reservas_habilitadas, horas_vencimiento_sena)
+VALUES ('aaaaaaaa-0000-0000-0000-00000000000f', 'posada-de-los-frenos', 'Posada de los Frenos', true, 24);
+
+INSERT INTO unidades (id, complejo_id, codigo, nombre, capacidad_maxima, orden)
+VALUES ('bbbbbbbb-0000-0000-0000-00000000000f', 'aaaaaaaa-0000-0000-0000-00000000000f',
+        'F1', 'La del freno', 4, 1);
+
+INSERT INTO config_calendario (complejo_id, primera_fecha, ultima_fecha, minimo_noches)
+VALUES ('aaaaaaaa-0000-0000-0000-00000000000f', '2027-05-01', '2027-12-31', 1);
+
+WITH p AS (
+  INSERT INTO periodos_precio (complejo_id, desde, hasta, etiqueta)
+  VALUES ('aaaaaaaa-0000-0000-0000-00000000000f', '2027-05-01', '2027-12-31', 'todo el año')
+  RETURNING id
+)
+INSERT INTO precios_unidad (periodo_id, unidad_id, precio)
+SELECT p.id, 'bbbbbbbb-0000-0000-0000-00000000000f', 50000 FROM p;
+
+DO $$
+DECLARE
+  v_slug  TEXT := 'posada-de-los-frenos';
+  v_uni   UUID := 'bbbbbbbb-0000-0000-0000-00000000000f';
+  v_desde DATE := '2027-05-02';
+  v_r     JSONB;
+  v_ok    INT := 0;
+  v_lim   JSONB := public.limites_de_reserva();
+BEGIN
+  -- Mismo mail, una tras otra, sobre fechas válidas y sin pisarse: el que corta
+  -- es el límite por mail. El de ritmo por complejo subió a veinte en la 024 —y
+  -- abajo se explica por qué— así que no se mete acá.
+  FOR i IN 0..4 LOOP
+    v_r := public.crear_reserva(v_slug, v_uni, v_desde + (i*7), v_desde + (i*7) + 2,
+                                2::smallint, 'Freno', '1', 'freno@ejemplo.test', '1');
+    IF (v_r->>'ok')::boolean THEN v_ok := v_ok + 1; END IF;
+  END LOOP;
+
+  PERFORM pg_temp.verificar(
+    'cinco intentos con el mismo mail no entran todos',
+    v_ok = (v_lim->>'por_mail')::int,
+    format('entraron %s, el límite por mail es %s · último: %s',
+           v_ok, v_lim->>'por_mail', v_r::text));
+
+  PERFORM pg_temp.verificar(
+    'y el que frena lo dice con un motivo, no con un error',
+    v_r->>'motivo' = 'demasiadas_tuyas',
+    format('el último contestó: %s', coalesce(v_r->>'motivo', '(entró)')));
+
+  PERFORM pg_temp.verificar(
+    'con un mensaje para una persona, no para un programador',
+    length(coalesce(v_r->>'mensaje','')) > 20,
+    coalesce(v_r->>'mensaje', '(sin mensaje)'));
+
+  -- Se limpia para que el bloque de abajo use las mismas fechas.
+  DELETE FROM reservas WHERE huesped_email = 'freno@ejemplo.test';
+
+  -- ----------------------------------------------------------------
+  -- El freno por IP, que es el que distingue de verdad
+  -- ----------------------------------------------------------------
+  -- Los frenos por mail y por complejo no separan un script de un fin de semana
+  -- largo: desde la base los dos se ven igual. La IP sí, y por eso
+  -- `crear_reserva` dejó de ser llamable desde afuera —la pasa nuestro servidor,
+  -- que es el único que la conoce—.
+  v_ok := 0;
+  FOR i IN 0..4 LOOP
+    v_r := public.crear_reserva(v_slug, v_uni, v_desde + (i*7), v_desde + (i*7) + 2,
+                                2::smallint, 'Freno', '1', format('freno%s@ejemplo.test', i), '1',
+                                '[]'::jsonb, 'transferencia', NULL, '203.0.113.9');
+    IF (v_r->>'ok')::boolean THEN v_ok := v_ok + 1; END IF;
+  END LOOP;
+
+  PERFORM pg_temp.verificar(
+    'cinco desde la misma IP, con mails distintos, tampoco',
+    v_ok = (v_lim->>'por_ip')::int,
+    format('entraron %s, el límite por IP es %s · último: %s',
+           v_ok, v_lim->>'por_ip', v_r::text));
+
+  PERFORM pg_temp.verificar(
+    'y el que frena nombra la IP como motivo',
+    v_r->>'motivo' = 'muy_rapido',
+    format('contestó: %s', coalesce(v_r->>'motivo', '(entró)')));
+
+  PERFORM pg_temp.verificar(
+    'la IP queda guardada con la reserva, para poder contarla',
+    EXISTS (SELECT 1 FROM reservas WHERE origen_ip = '203.0.113.9'),
+    'ninguna reserva guardó de dónde vino');
+
+  -- ----------------------------------------------------------------
+  -- El tope por complejo: el que acota el daño si todo lo demás falla
+  -- ----------------------------------------------------------------
+  -- Una unidad activa → el piso de seis manda. Se llena con mails e IPs
+  -- distintas, que es lo peor que puede pasar, y aun así hay un techo.
+  DELETE FROM reservas WHERE huesped_email LIKE 'freno%@ejemplo.test';
+  v_ok := 0;
+  FOR i IN 0..9 LOOP
+    v_r := public.crear_reserva(v_slug, v_uni, v_desde + 100 + (i*7), v_desde + 100 + (i*7) + 2,
+                                2::smallint, 'Freno', '1', format('tope%s@ejemplo.test', i), '1',
+                                '[]'::jsonb, 'transferencia', NULL, format('198.51.100.%s', i));
+    IF (v_r->>'ok')::boolean THEN v_ok := v_ok + 1; END IF;
+  END LOOP;
+
+  PERFORM pg_temp.verificar(
+    'con mails e IPs distintas, el tope por complejo igual corta',
+    v_ok <= greatest((v_lim->>'piso_por_complejo')::int, (v_lim->>'por_unidad_activa')::int),
+    format('entraron %s de 10', v_ok));
+
+  PERFORM pg_temp.verificar(
+    'y lo dice como saturación, no como error',
+    v_r->>'motivo' = 'complejo_saturado',
+    format('contestó: %s', coalesce(v_r->>'motivo', '(entró)')));
+
+  DELETE FROM reservas WHERE huesped_email LIKE 'freno%@ejemplo.test'
+                          OR huesped_email LIKE 'tope%@ejemplo.test';
+END $$;
+
+-- Y que no se pueda llamar desde afuera, que es la mitad que importa: si
+-- `anon` la pudiera llamar, todo lo de arriba sería decorativo, porque un
+-- script la llamaría sin IP y sin pasar por nuestro servidor.
+DO $$
+BEGIN
+  PERFORM pg_temp.verificar(
+    'un visitante NO puede llamar a crear_reserva',
+    NOT has_function_privilege('anon',
+      'public.crear_reserva(text,uuid,date,date,smallint,text,text,text,text,jsonb,text,text,text)',
+      'EXECUTE'),
+    'anon todavía la puede llamar: el freno por IP no sirve de nada');
+
+  PERFORM pg_temp.verificar(
+    'y la versión vieja, sin IP, ya no existe',
+    NOT EXISTS (
+      SELECT 1 FROM pg_proc
+       WHERE proname = 'crear_reserva'
+         AND pg_get_function_identity_arguments(oid) NOT LIKE '%p_ip text%'),
+    'quedó una firma sin p_ip, y PostgREST elegiría ésa');
+END $$;
+
 \echo ''
 -- lpad RECORTA cuando el texto es más largo que el ancho: con 2, la prueba
 -- 103 se imprimía como «10», igual que la 104 y la 105. Un número de prueba
@@ -2566,6 +2725,29 @@ SELECT lpad(n::text, 3) || '  ' ||
             ELSE E'\n        → ' || detalle
        END AS "prueba de la base"
   FROM resultado ORDER BY n;
+
+
+-- Los datos para transferir: con el slug ya no se pueden pedir, y la reserva
+-- recién hecha los trae.
+DO $$
+DECLARE v_n INT;
+BEGIN
+  SELECT count(*) INTO v_n FROM pg_proc
+   WHERE proname='datos_para_transferir'
+     AND pg_get_function_identity_arguments(oid) = 'p_slug text';
+  PERFORM pg_temp.verificar(
+    'datos_para_transferir ya no acepta el slug',
+    v_n = 0,
+    format('todavía existe la versión por slug (%s)', v_n));
+
+  SELECT count(*) INTO v_n FROM pg_proc
+   WHERE proname='datos_para_transferir'
+     AND pg_get_function_identity_arguments(oid) = 'p_reserva uuid';
+  PERFORM pg_temp.verificar(
+    'y sí el id de una reserva',
+    v_n = 1,
+    format('encontré %s', v_n));
+END $$;
 
 \echo ''
 SELECT count(*) FILTER (WHERE paso) || ' de ' || count(*) || ' pasaron'
