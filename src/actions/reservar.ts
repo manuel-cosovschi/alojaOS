@@ -15,7 +15,8 @@
  * cliente.
  */
 
-import { clienteServidor } from '@/lib/supabase/servidor';
+import { headers } from 'next/headers';
+import { clienteServicio } from '@/lib/supabase/servicio';
 import { programarAviso } from '@/actions/avisar';
 
 export interface Pedido {
@@ -32,7 +33,17 @@ export interface Pedido {
 }
 
 export type Resultado =
-  | { ok: true; id: string; noches: number; total: number; sena: number; venceEl: string }
+  | {
+      ok: true;
+      id: string;
+      noches: number;
+      total: number;
+      sena: number;
+      venceEl: string;
+      /** Dónde transferir. Viaja con la reserva y no se puede pedir con el slug. */
+      datosTransferencia: string | null;
+      whatsapp: string | null;
+    }
   | { ok: false; mensaje: string; motivo?: string };
 
 /** Mensajes para cuando la base devuelve un motivo sin texto propio. */
@@ -57,7 +68,21 @@ export async function pedirReserva(pedido: Pedido): Promise<Resultado> {
     return { ok: false, mensaje: 'Faltan datos para completar la reserva.', motivo: 'faltan_datos' };
   }
 
-  const { data, error } = await clienteServidor().rpc('crear_reserva', {
+  // ------------------------------------------------------------------
+  // Con la clave de SERVICIO, y no con la publicable
+  // ------------------------------------------------------------------
+  // Desde la migración 024 `crear_reserva` está revocada de `anon`: la única
+  // forma de crear una reserva es por acá. Antes se podía llamar derecho por
+  // `/rest/v1/rpc/crear_reserva` con la clave que viaja en el navegador, y la
+  // auditoría del 15/10 lo usó para tomar catorce noches en un segundo.
+  //
+  // Y como ahora pasa por acá, podemos decirle a la base DE DÓNDE viene. Eso
+  // es lo que la base no podía saber sola, y es lo que distingue un script de
+  // un fin de semana largo.
+  const ip = (await ipDeQuienPide()) ?? null;
+
+  const { data, error } = await clienteServicio().rpc('crear_reserva', {
+    p_ip: ip,
     p_slug: pedido.slug,
     p_unidad: pedido.unidadId,
     p_check_in: pedido.checkIn,
@@ -102,6 +127,11 @@ export async function pedirReserva(pedido: Pedido): Promise<Resultado> {
       total: Number(r.total),
       sena: Number(r.sena),
       venceEl: String(r.vence_el),
+      // Vienen con la reserva, no de una función que cualquiera pueda llamar
+      // con el slug: hasta la auditoría del 15/10, el alias y el CBU de cada
+      // complejo se conseguían con una sola llamada sabiendo su dirección.
+      datosTransferencia: typeof r.datos_transferencia === 'string' ? r.datos_transferencia : null,
+      whatsapp: typeof r.whatsapp === 'string' ? r.whatsapp : null,
     };
   }
 
@@ -118,20 +148,21 @@ export async function pedirReserva(pedido: Pedido): Promise<Resultado> {
   };
 }
 
-/** En qué quedó una reserva. Sólo estado y vencimiento: nada del huésped. */
-export async function estadoDeReserva(
-  id: string
-): Promise<{ estado: string | null; venceEl: string | null }> {
-  const { data, error } = await clienteServidor().rpc('estado_reserva', { p_reserva: id });
-
-  if (error) {
-    console.error('[estadoDeReserva] la base devolvió un error:', error.message);
-    return { estado: null, venceEl: null };
-  }
-
-  const r = (data ?? {}) as Record<string, unknown>;
-  return {
-    estado: typeof r.estado === 'string' ? r.estado : null,
-    venceEl: typeof r.vence_el === 'string' ? r.vence_el : null,
-  };
+/**
+ * La IP de quien está reservando.
+ *
+ * Sale de las cabeceras que pone la red, no de nada que mande el navegador: el
+ * que reserva no puede elegir la suya. `x-forwarded-for` puede traer varias
+ * —la del visitante y las de los intermediarios—; la primera es la del
+ * visitante.
+ *
+ * Si no viene ninguna, devuelve `null` y la base no aplica el freno por IP. Es
+ * a propósito: inventar una IP sería peor que no tenerla, porque todas las
+ * reservas sin IP compartirían el mismo cupo y se frenarían entre ellas.
+ */
+async function ipDeQuienPide(): Promise<string | null> {
+  const h = await headers();
+  const reenviada = h.get('x-forwarded-for');
+  if (reenviada) return reenviada.split(',')[0]?.trim() || null;
+  return h.get('x-real-ip')?.trim() || null;
 }

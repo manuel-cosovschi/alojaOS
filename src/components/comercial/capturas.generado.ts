@@ -9,7 +9,7 @@
  * afirmación sobre un producto que ya puede haber cambiado.
  */
 
-export const CAPTURAS_SACADAS_EL = '2026-10-14';
+export const CAPTURAS_SACADAS_EL = '2026-10-15';
 
 export const CAPTURAS = {
   'huesped-eligiendo': {

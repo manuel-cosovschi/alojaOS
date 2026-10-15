@@ -24,6 +24,7 @@ import { Fechas } from '@/components/Fechas';
 import { Precios } from '@/components/Precios';
 import { ReglasDeTemporada } from '@/components/ReglasDeTemporada';
 import { DatosDelComplejo } from '@/components/DatosDelComplejo';
+import { LlevarseLosDatos } from '@/components/LlevarseLosDatos';
 import { Marca } from '@/components/Marca';
 
 /**
@@ -186,6 +187,11 @@ export default async function Panel() {
                     el resultado es peor que no darlo. */}
                 <div className="mt-4">
                   <Marca complejo={complejo} tipografias={tipografias} />
+                </div>
+
+                {/* Abajo de todo: es lo que se usa una vez, no todos los días. */}
+                <div className="mt-4">
+                  <LlevarseLosDatos complejoId={complejo.id} nombre={complejo.nombre} />
                 </div>
               </section>
             ))}

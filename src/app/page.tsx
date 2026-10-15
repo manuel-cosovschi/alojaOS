@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import { leerComplejo, nochesOcupadas, slugDeLaPeticion } from '@/lib/complejo';
 import { hoyISO } from '@/lib/fechas';
 import { Reservar } from '@/components/Reservar';
-import { datosParaTransferir } from '@/actions/comprobante';
 import { Comercial } from '@/components/comercial/Comercial';
 import { direccionDelComplejo } from '@/lib/tenant';
 
@@ -96,12 +95,10 @@ export default async function Pagina() {
 
   const ocupadas = await nochesOcupadas(complejo.id);
   const hoy = hoyISO(complejo.zona_horaria);
-  // Los datos bancarios van aparte de `complejo_publico` a propósito: así no
-  // quedan en el HTML de cada visita, ni de cada robot que pase por la página.
-  // Hacen falta recién cuando alguien reservó.
-  const { datos: datosTransferencia } = complejo.reservas_habilitadas
-    ? await datosParaTransferir(slug)
-    : { datos: null };
+  // Los datos bancarios NO se piden acá. Antes sí, en cada visita, y además la
+  // función que los daba aceptaba el slug, así que cualquiera los obtenía sin
+  // reservar. Ahora viajan con la respuesta de `crear_reserva`: los recibe
+  // quien acaba de reservar y nadie más. Y la página hace una consulta menos.
 
   const { marca } = complejo;
   const estilo = {
@@ -133,7 +130,6 @@ export default async function Pagina() {
             complejo={complejo}
             ocupadas={ocupadas}
             hoy={hoy}
-            datosTransferencia={datosTransferencia}
           />
         ) : (
           <CerradoPorAhora whatsapp={complejo.whatsapp} />

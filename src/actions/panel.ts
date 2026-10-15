@@ -763,3 +763,32 @@ export async function reabrirFecha(bloqueoId: string): Promise<Resultado> {
 
   return { ok: true, mensaje: 'Reabierta. Esas noches vuelven a estar a la venta.' };
 }
+
+/**
+ * Todo lo del complejo, en un JSON, para que el dueño se lo lleve.
+ *
+ * La página comercial promete «te vas cuando quieras y te llevás tus datos», y
+ * hasta el 15/10 no había ninguna función de exportación en el producto: era
+ * una promesa sin código atrás.
+ *
+ * Corre con la sesión del dueño, no con la clave de servicio: así la base
+ * decide con `es_miembro()` si puede o no, igual que con todo lo demás del
+ * panel, y una exportación nunca puede traer el complejo de otro.
+ */
+export async function exportarComplejo(
+  complejoId: string
+): Promise<{ ok: true; json: string } | { ok: false; mensaje: string }> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('exportar_complejo', { p_complejo: complejoId });
+
+  if (error) {
+    console.error('[exportarComplejo] la base no dejó:', error.message);
+    return { ok: false, mensaje: mensajeDeError(error.message) };
+  }
+
+  if (!data) {
+    return { ok: false, mensaje: 'La base no devolvió nada. Probá de nuevo en un minuto.' };
+  }
+
+  return { ok: true, json: JSON.stringify(data, null, 2) };
+}

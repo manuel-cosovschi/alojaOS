@@ -7,6 +7,7 @@
  * no puede cotizar, sin reglas no sabe qué fechas ofrecer.
  */
 
+import { cache } from 'react';
 import { headers } from 'next/headers';
 import { CABECERA_COMPLEJO } from './tenant';
 import { clienteServidor } from './supabase/servidor';
@@ -66,7 +67,20 @@ export async function slugDeLaPeticion(): Promise<string | null> {
 }
 
 /** El complejo, o null si no existe. */
-export async function leerComplejo(slug: string): Promise<Complejo | null> {
+/**
+ * El complejo de una dirección.
+ *
+ * Envuelta en `cache()` de React, que recuerda el resultado **dentro de un
+ * mismo render** y no entre visitas. Hace falta porque esta función se llama
+ * dos veces por página: una en `generateMetadata()`, para que la pestaña lleve
+ * el nombre del complejo, y otra en la página.
+ *
+ * Sin esto eran dos consultas idénticas, y no son baratas: el servidor corre en
+ * Virginia y la base está en São Paulo, así que cada una cruza el continente.
+ * La segunda la agregué yo el 14/10 al arreglar el título de la pestaña, sin
+ * darme cuenta de que duplicaba la primera.
+ */
+export const leerComplejo = cache(async function leerComplejo(slug: string): Promise<Complejo | null> {
   const { data, error } = await clienteServidor().rpc('complejo_publico', { p_slug: slug });
 
   // Un error de la base no se devuelve como "no existe": son cosas distintas y
@@ -74,7 +88,7 @@ export async function leerComplejo(slug: string): Promise<Complejo | null> {
   if (error) throw new Error(`No se pudo leer el complejo: ${error.message}`);
 
   return (data as Complejo | null) ?? null;
-}
+});
 
 /** Las noches ocupadas de un complejo. Sin datos de quién las ocupa. */
 export async function nochesOcupadas(

@@ -348,6 +348,24 @@ async function main() {
     );
     verificar(texto.includes('Vence el'), 'y con el vencimiento de la seña a la vista');
 
+    // --- El alias y el CBU no están antes de reservar ---------------------
+    // Hasta la auditoría del 15/10 los datos bancarios se pedían en cada
+    // visita y además `datos_para_transferir` aceptaba el slug, así que
+    // cualquiera los obtenía sin reservar. Ahora viajan con la respuesta de
+    // `crear_reserva`. Esto comprueba las dos mitades: que lleguen cuando
+    // corresponde, y que no estuvieran antes.
+    {
+      const otra = await contexto.newPage();
+      await otra.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
+      const html = await otra.content();
+      await otra.close();
+      verificar(
+        !html.includes('cabanias.del.sol') && !/CBU/i.test(html),
+        'el alias y el CBU NO están en la página antes de reservar',
+        'los datos bancarios viajan en el HTML de cada visita'
+      );
+    }
+
     // --- Dónde transferir -------------------------------------------------
     verificar(
       (await page.getByText('Alias: cabanias.del.sol').count()) > 0,

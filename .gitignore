@@ -40,3 +40,6 @@ supabase/.temp/
 # Datos de clientes de verdad: nombre, telefono, CBU. No van al repo.
 clientes/
 .alojaos-alta-*.json
+
+# Los respaldos tienen datos de personas y de cuentas bancarias.
+/respaldos
