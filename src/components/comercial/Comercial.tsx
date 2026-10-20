@@ -861,8 +861,11 @@ function ElDemo() {
 
         <div data-revelar>
           <Marco>
-            <Captura cual="panel-senas" sizes="(max-width: 1024px) 90vw, 520px" />
+            <Captura cual="demo-guia" sizes="(max-width: 1024px) 90vw, 560px" />
           </Marco>
+          <p className="mt-4 text-center text-xs" style={{ color: NOCHE.textoTenue }}>
+            La guía, en el paso de las señas. Captura del {DIA_DE_LAS_CAPTURAS}.
+          </p>
         </div>
       </div>
     </Seccion>

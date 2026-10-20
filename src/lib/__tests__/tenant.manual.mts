@@ -10,7 +10,7 @@
 
 process.env.NEXT_PUBLIC_SITE_URL = 'https://alojaos.shop';
 
-const { complejoDelHost, slugValido, dominioRaiz, direccionDelComplejo } = await import('../tenant.js');
+const { complejoDelHost, slugValido, dominioRaiz, direccionDelComplejo, esSlugDeDemo } = await import('../tenant.js');
 
 let fallas = 0;
 const igual = (real: unknown, esperado: unknown, nombre: string) => {
@@ -28,6 +28,8 @@ igual(dominioRaiz(), 'alojaos.shop', 'el dominio raíz sale del sitio');
 igual(complejoDelHost('cabanias-del-sol.alojaos.shop'), 'cabanias-del-sol', 'un subdominio es un complejo');
 igual(complejoDelHost('CABANIAS.AlojaOS.Shop'), 'cabanias', 'las mayúsculas no importan');
 igual(complejoDelHost('cabanias.alojaos.shop:3000'), 'cabanias', 'el puerto tampoco');
+igual(complejoDelHost('demo-c0eadf2d1e.alojaos.shop'), 'demo-c0eadf2d1e', 'la copia de una demo se sirve en su subdominio');
+igual(complejoDelHost('demo-cualquiera.alojaos.shop'), null, 'pero un demo- con otra forma, no');
 igual(complejoDelHost('cabanias.alojaos.shop.'), 'cabanias', 'ni el punto final');
 
 // --- Lo que NO es un complejo
@@ -66,6 +68,11 @@ igual(slugValido('abc'), true, 'tres caracteres es el mínimo');
 igual(slugValido('ab'), false, 'dos, no');
 igual(slugValido('admin'), false, 'un reservado no vale');
 igual(slugValido('demo-lo-que-sea'), false, 'ni uno que arranque con demo-');
+igual(slugValido('demo-c0eadf2d1e'), false, 'tampoco la forma exacta de una copia: un cliente no se puede llamar así');
+// --- Las copias de la demo sí se sirven, con su forma exacta y ninguna otra
+igual(esSlugDeDemo('demo-c0eadf2d1e'), true, 'la forma que arma crear_demo() es una demo');
+igual(esSlugDeDemo('demo-lo-que-sea'), false, 'otra cosa con demo- adelante no lo es');
+igual(esSlugDeDemo('demo-C0EADF2D1E'), false, 'en mayúsculas tampoco');
 igual(slugValido('con_guion_bajo'), false, 'el guión bajo no está permitido');
 
 // --- La dirección que se le muestra al dueño

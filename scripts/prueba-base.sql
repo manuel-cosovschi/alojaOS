@@ -1032,6 +1032,9 @@ DECLARE
   v JSONB;
   v_unidad UUID := 'bbbbbbbb-0000-0000-0000-000000000002';
 BEGIN
+  -- Desde la 027 los conteos son del que mira: se mira como el dueño del
+  -- complejo donde se planta el hold.
+  PERFORM set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
   v := public.salud_del_vencimiento();
 
   -- Sin pg_cron tiene que decir 'al_leer'. Que diga 'cron' acá sería la
@@ -1075,6 +1078,7 @@ BEGIN
         'aaaaaaaa-0000-0000-0000-000000000001', v_unidad)
        WHERE check_in = '2027-03-10'
     ));
+  PERFORM set_config('request.jwt.claim.sub', '', true);
 END $$;
 
 -- ============================================
@@ -2768,6 +2772,20 @@ BEGIN
 
   SELECT id INTO v_plant FROM complejos WHERE es_plantilla_demo;
   PERFORM pg_temp.verificar('hay una plantilla de la demo', v_plant IS NOT NULL);
+
+  -- El reloj de vencimientos corre sobre todo, la plantilla incluida. Si sus
+  -- señas tuvieran un plazo de verdad, a las pocas horas quedarían vencidas y
+  -- cada demo nacería sin señas que mostrar. Pasó (ver la 026). Así que se
+  -- corre el reloj, y la plantilla tiene que seguir teniéndolas.
+  --
+  -- En el arnés no pasan cuatro horas, así que correr el reloj solo no prueba
+  -- nada: una seña con plazo de cuatro horas también sobreviviría. Lo que se
+  -- mira es la causa: que el plazo de la plantilla sea infinito.
+  PERFORM public.liberar_vencidas(NULL);
+  SELECT count(*) INTO v_n FROM reservas
+   WHERE complejo_id = v_plant AND estado = 'HOLD_TRANSFER' AND vence_el = 'infinity';
+  PERFORM pg_temp.verificar('las señas de la plantilla no vencen nunca, ni con el reloj corriendo',
+    v_n = 2, format('señas vivas y sin plazo en la plantilla: %s', v_n));
   PERFORM pg_temp.verificar('y la página pública no la devuelve',
     public.complejo_publico('plantilla-demo') IS NULL,
     'complejo_publico(plantilla-demo) contestó algo');
@@ -2830,6 +2848,16 @@ BEGIN
     v_m = 0, format('vio %s ajenas', v_m));
   PERFORM pg_temp.verificar('mi_demo() le contesta la suya y no otra',
     (v_r->>'complejo_id')::uuid = v_ca, coalesce(v_r::text, '(nada)'));
+
+  -- El contador del reloj: las señas de quien mira, no las de la plataforma.
+  -- Antes de la 027 un visitante con dos señas leía «4 esperando».
+  PERFORM set_config('request.jwt.claim.sub', v_a::text, true);
+  v_r := public.salud_del_vencimiento();
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+  SELECT count(*) INTO v_n FROM reservas
+   WHERE complejo_id = v_ca AND estado = 'HOLD_TRANSFER' AND vence_el >= now();
+  PERFORM pg_temp.verificar('el panel cuenta las señas del que mira, no las de toda la plataforma',
+    (v_r->>'esperando')::int = v_n, format('dijo %s, el visitante tiene %s', v_r->>'esperando', v_n));
 
   PERFORM set_config('request.jwt.claim.sub', v_a::text, true);
   BEGIN

@@ -9,7 +9,7 @@
  * afirmación sobre un producto que ya puede haber cambiado.
  */
 
-export const CAPTURAS_SACADAS_EL = '2026-10-15';
+export const CAPTURAS_SACADAS_EL = '2026-10-20';
 
 export const CAPTURAS = {
   'huesped-eligiendo': {
@@ -17,34 +17,41 @@ export const CAPTURAS = {
     ancho: 780,
     alto: 1688,
     que: "El calendario, las noches elegidas y la seña",
-    de: "https://cabanias-del-sol.alojaos.shop/",
+    de: "http://cabanias-del-sol.alojaos.shop:3000/",
   },
   'huesped-transferir': {
     archivo: '/capturas/huesped-transferir.png',
     ancho: 780,
     alto: 1688,
     que: "El plazo de la seña, el alias y el CBU para transferir",
-    de: "https://cabanias-del-sol.alojaos.shop/",
+    de: "http://cabanias-del-sol.alojaos.shop:3000/",
   },
   'panel-senas': {
     archivo: '/capturas/panel-senas.png',
     ancho: 1664,
     alto: 488,
     que: "Las señas esperando, con su comprobante y su plazo",
-    de: "https://alojaos.shop/panel",
+    de: "http://alojaos.shop:3000/panel",
   },
   'panel-precios': {
     archivo: '/capturas/panel-precios.png',
     ancho: 1664,
     alto: 668,
     que: "Los precios por temporada, cargados desde el panel",
-    de: "https://alojaos.shop/panel",
+    de: "http://alojaos.shop:3000/panel",
   },
   'panel-fechas': {
     archivo: '/capturas/panel-fechas.png',
     ancho: 1664,
     alto: 264,
     que: "Las fechas cerradas a mano, y el aviso de qué falta",
-    de: "https://alojaos.shop/panel",
+    de: "http://alojaos.shop:3000/panel",
+  },
+  'demo-guia': {
+    archivo: '/capturas/demo-guia.png',
+    ancho: 2360,
+    alto: 1640,
+    que: "El demo guiado: la guía señalando las señas que esperan",
+    de: "http://alojaos.shop:3000/#demo",
   },
 } as const;

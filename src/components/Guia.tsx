@@ -123,6 +123,10 @@ export function Guia({
     tituloRef.current?.focus({ preventScroll: true });
     if (paso.forma !== 'foco' || !paso.objetivo) {
       setRecuadro(null);
+      // La bienvenida, arriba de todo. Se llega desde la mitad de la página
+      // comercial y la navegación conserva ese scroll: el panel abría por la
+      // mitad, con la primera pantalla —las señas— fuera de la vista.
+      if (indice === 0) window.scrollTo({ top: 0 });
       return;
     }
     const el = document.querySelector(`[data-guia="${paso.objetivo}"]`);
@@ -133,7 +137,7 @@ export function Guia({
     const sinMovimiento = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const y = el.getBoundingClientRect().top + window.scrollY - 88;
     window.scrollTo({ top: Math.max(y, 0), behavior: sinMovimiento ? 'auto' : 'smooth' });
-  }, [paso]);
+  }, [paso, indice]);
 
   // Y seguirlo: el recuadro se recalcula al scrollear, al cambiar el tamaño
   // de la ventana y cuando el panel se vuelve a pintar después de confirmar

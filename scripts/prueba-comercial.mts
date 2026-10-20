@@ -219,26 +219,15 @@ async function main() {
         verificar((r?.status() ?? 0) < 400, `el archivo ${u.split('/').pop()} contesta`, `HTTP ${r?.status()}`);
       }
 
-      // El demo embebido no puede cargar solo: sería traer un sitio entero
-      // —con su base del otro lado— para alguien que quizás nunca scrollea
-      // hasta ahí.
+      // El demo ya no va embebido: es un botón que arma una copia del sistema
+      // para quien lo toca (`npm run prueba:demo` la recorre entera). Acá se
+      // mira lo que esta batería puede mirar sin crear demos: que el botón
+      // esté, y que no quede ningún marco cargando un sitio entero de fondo.
+      verificar((await page.locator('iframe').count()) === 0, 'la página no carga ningún marco de fondo');
       verificar(
-        (await page.locator('iframe').count()) === 0,
-        'el demo embebido no carga hasta que lo tocan',
-        'hay un iframe antes de que nadie apriete nada'
+        (await page.locator('#demo [data-boton-demo]').count()) === 1,
+        'y la sección del demo tiene su botón para entrar'
       );
-
-      const boton = page.getByRole('button', { name: /Probar el demo/ });
-      if ((await boton.count()) > 0) {
-        await boton.click();
-        await page.waitForTimeout(3500);
-        const adentro = await page.frameLocator('iframe').locator('h1').first().innerText().catch(() => '');
-        verificar(
-          adentro.trim().length > 0,
-          'y al tocarlo carga el sistema de verdad adentro de la página',
-          'el iframe quedó vacío: casi siempre es `frame-ancestors` bloqueando el dominio desde el que se sirve'
-        );
-      }
     }
 
     // --- Sin JavaScript, la página se ve entera ----------------------------

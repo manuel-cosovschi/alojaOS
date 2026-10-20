@@ -56,6 +56,7 @@ const REQUERIDAS = [
   'panel-senas.png',
   'panel-precios.png',
   'panel-fechas.png',
+  'demo-guia.png',
 ];
 
 /** El huésped de las capturas. El nombre dice qué es, para el que lo vea en la base. */
@@ -328,6 +329,27 @@ async function main() {
     }
 
     await escritorio.close();
+
+    // --- El demo guiado, como lo ve un visitante ----------------------------
+    // Entra por el botón de la página comercial, igual que cualquiera: se
+    // arma una copia, la guía arranca sola, y se fotografía en el paso de las
+    // señas, que es el que más dice. Al terminar sale con «Salir», que borra la
+    // copia y la cuenta en el momento. Los datos que se ven son los de la
+    // plantilla: inventados, con mails de `ejemplo.test`.
+    const visitante = await navegador.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2 });
+    const visita = await visitante.newPage();
+    await visita.goto(`${BASE}/#demo`, { waitUntil: 'domcontentloaded' });
+    await visita.locator('[data-boton-demo]').click();
+    await visita.waitForURL(/\/panel/, { timeout: 45_000 });
+    await visita.locator('[data-guia-tarjeta]').waitFor({ timeout: 15_000 });
+    await visita.getByRole('button', { name: 'Empezar' }).click();
+    await visita.getByRole('button', { name: /Siguiente/ }).click();
+    await visita.waitForTimeout(1500); // que termine de llevar el scroll y el recuadro
+    await guardar(visita, 'demo-guia.png', `${BASE}/#demo`, 'El demo guiado: la guía señalando las señas que esperan');
+    await visita.getByRole('button', { name: 'Salir de la guía' }).click();
+    await visita.locator('[data-cartel-demo]').getByRole('button', { name: 'Salir' }).click();
+    await visita.waitForURL((u) => !u.pathname.startsWith('/panel'), { timeout: 30_000 });
+    await visitante.close();
   } finally {
     await navegador.close();
     console.log(`→ al terminar: ${await borrarLaReservaDeLasCapturas()}`);

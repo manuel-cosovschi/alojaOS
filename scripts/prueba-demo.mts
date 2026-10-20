@@ -271,9 +271,22 @@ async function main() {
 
     // --- 6. Reiniciar y salir -----------------------------------------------
     await page.getByRole('button', { name: 'Reiniciar' }).click();
-    await page.waitForURL(/\/panel/, { timeout: 45_000 });
+    // No alcanza con esperar la URL: ya estaba en /panel antes de tocar, así
+    // que esa espera termina en el acto y se miraba la copia vieja. Se espera
+    // lo que de verdad cambia: la copia de esta cuenta en la base.
+    let despues: string | null = complejo;
+    // Hasta que haya una copia y sea otra: en el medio hay un instante en que
+    // la vieja ya se borró y la nueva todavía no existe.
+    for (let i = 0; i < 60 && (despues === complejo || despues === null); i += 1) {
+      await page.waitForTimeout(500);
+      despues = usuario ? await demoDe(usuario) : null;
+    }
+    await page.waitForFunction(
+      (viejo) => !(document.querySelector('[data-guia="pagina"]')?.getAttribute('href') ?? '').includes(viejo),
+      direccionHuesped.split('//')[1]?.split('.')[0] ?? '',
+      { timeout: 30_000 }
+    ).catch(() => {});
     await page.waitForLoadState('networkidle');
-    const despues = usuario ? await demoDe(usuario) : null;
     verificar(!!despues && despues !== complejo, 'reiniciar arma una copia nueva para la misma cuenta');
     verificar(!(await page.locator('main').innerText()).includes(HUESPED),
       'y vuelve al principio: la reserva de prueba ya no está');

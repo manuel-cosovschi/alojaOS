@@ -278,7 +278,10 @@ WITH esperado(orden, que, existe) AS (
   -- estar vencidas y siguen ocupando noches. Si esto falla, el reloj está
   -- muerto, sea cual sea, y hay un complejo con una cabaña bloqueada de gratis.
   (86, 'ninguna seña vencida sigue ocupando noches',
-       ((public.salud_del_vencimiento()->>'atrasadas')::integer = 0)),
+       -- Contando directo y no con `salud_del_vencimiento()`: desde la 027 esa
+       -- cuenta es la del que mira, y el verificador no mira como nadie, así
+       -- que daría siempre 0 y la fila pasaría sin comprobar nada.
+       ((SELECT count(*) FROM reservas WHERE estado = 'HOLD_TRANSFER' AND vence_el < now()) = 0)),
 
   -- --- 016: los precios desde el panel -----------------------------------
   -- Las cuatro de la 016. Van con los permisos en la misma fila porque una
@@ -544,5 +547,10 @@ SELECT 164, 'el servidor se entera de que una reserva es de demo antes de mandar
 UNION ALL
 SELECT 165, 'limpiar_demos nunca borra una cuenta que no sea del dominio de las demos',
        CASE WHEN (SELECT prosrc FROM pg_proc WHERE proname='limpiar_demos') LIKE '%@demo.alojaos.shop%'
+            THEN 'ok' ELSE 'FALTA' END
+UNION ALL
+SELECT 166, 'la plantilla de la demo conserva sus señas: el reloj no se las vence',
+       CASE WHEN (SELECT count(*) FROM reservas r JOIN complejos c ON c.id = r.complejo_id
+                   WHERE c.es_plantilla_demo AND r.estado = 'HOLD_TRANSFER' AND r.vence_el = 'infinity') = 2
             THEN 'ok' ELSE 'FALTA' END
 ORDER BY orden;

@@ -37,6 +37,23 @@ export function slugValido(slug: string): boolean {
 }
 
 /**
+ * El slug de la copia de un visitante de la demo: `demo-` y diez caracteres
+ * hexadecimales, exactamente lo que arma `crear_demo()` (migración 025).
+ *
+ * `demo-` está reservado y tiene que seguir estándolo para dar de alta un
+ * cliente: nadie puede llamar a su complejo «demo-algo» y hacerse pasar por
+ * una demo. Pero las copias sí se sirven, porque la última parada de la guía
+ * es reservar en ellas como huésped. Antes de esto el subdominio de una copia
+ * mostraba la página comercial: la regla que protege el alta también le
+ * cerraba la puerta a la demo.
+ */
+const SLUG_DE_DEMO = /^demo-[0-9a-f]{10}$/;
+
+export function esSlugDeDemo(slug: string): boolean {
+  return SLUG_DE_DEMO.test(slug);
+}
+
+/**
  * El dominio raíz del que cuelgan las páginas de los complejos.
  *
  * Sale de la variable de entorno y no de una constante porque en local es
@@ -90,7 +107,7 @@ export function complejoDelHost(host: string | null | undefined): string | null 
   // Un solo nivel: `a.b.alojaos.shop` no es el complejo `a.b`.
   if (resto.includes('.')) return null;
 
-  return slugValido(resto) ? resto : null;
+  return slugValido(resto) || esSlugDeDemo(resto) ? resto : null;
 }
 
 /** La dirección pública de un complejo, para mostrarla o mandarla por mensaje. */
