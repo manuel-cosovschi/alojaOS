@@ -38,11 +38,11 @@ export async function generateMetadata(): Promise<Metadata> {
   const slug = await slugDeLaPeticion();
 
   if (!slug) {
-    const titulo = 'AlojaOS · Reservas para complejos de 3 a 15 unidades';
+    const titulo = 'AlojaOS · Tu complejo se reserva mientras dormís';
     const descripcion =
-      'Tu propia página de reservas, con tu nombre y tus colores. El huésped elige ' +
-      'las noches, ve el precio, transfiere la seña y sube el comprobante. Sin comisión ' +
-      'por reserva. Y nunca dos reservas sobre la misma unidad y la misma noche.';
+      'Tu propia página de reservas, con tu nombre y tus colores, para complejos de ' +
+      '3 a 15 unidades. El huésped elige las noches, ve el precio y deja la seña a la ' +
+      'hora que sea. Sin comisión por reserva.';
     return {
       title: titulo,
       description: descripcion,

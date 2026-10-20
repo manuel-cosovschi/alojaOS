@@ -28,6 +28,7 @@
     "capturas": "tsx scripts/capturas.mts",
     "og": "tsx scripts/og.mts",
     "videos": "tsx scripts/videos.mts",
+    "caso": "tsx scripts/caso-las-canas.mts",
     "respaldo": "tsx scripts/respaldo.mts"
   },
   "dependencies": {

@@ -43,3 +43,4 @@ clientes/
 
 # Los respaldos tienen datos de personas y de cuentas bancarias.
 /respaldos
+.caso-crudo/

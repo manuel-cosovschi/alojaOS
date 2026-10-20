@@ -14,9 +14,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { NOCHE } from '@/lib/marca-alojaos';
 import { VIDEOS } from './videos.generado';
+import { CASO_VIDEO } from './caso.generado';
 import { Flecha } from './Iconos';
 
-type Clave = keyof typeof VIDEOS;
+/** Los del demo y el del caso, que sale del sitio de Las Cañas con otro script. */
+const TODOS = { ...VIDEOS, 'las-canas': CASO_VIDEO };
+
+type Clave = keyof typeof TODOS;
 
 /**
  * El video, en bucle y sin sonido.
@@ -38,7 +42,7 @@ type Clave = keyof typeof VIDEOS;
  * un video automáticamente, y quedaría un cuadro quieto sin que nada falle.
  */
 export function Video({ cual, className = '' }: { cual: Clave; className?: string }) {
-  const v = VIDEOS[cual];
+  const v = TODOS[cual];
   const ref = useRef<HTMLVideoElement>(null);
   const [quieto, setQuieto] = useState(false);
 

@@ -23,6 +23,7 @@
 import { chromium } from 'playwright';
 import { readFileSync } from 'node:fs';
 import { huellaDeLaInterfaz } from './huella-interfaz.mjs';
+import { CASO_SITIO } from '../src/components/comercial/caso.generado';
 
 const BASE = (process.env.ALOJAOS_BASE ?? 'http://alojaos.test:3000').replace(/\/$/, '');
 
@@ -176,12 +177,18 @@ async function main() {
     // tiene que quedar en el mismo dominio desde el que se está sirviendo. Así
     // la prueba vale igual local y en producción, y la que falla es la mezcla,
     // que es exactamente lo que pasó.
+    //
+    // Hay dos afuera a propósito, y están escritos uno por uno: WhatsApp y el
+    // sitio del caso, que la página muestra para que cualquiera entre y lo
+    // compare. Se toma del módulo que escribe `npm run caso`, el mismo que usa
+    // la página, así que no puede quedar un dominio viejo de un lado.
     {
       const miDominio = new URL(BASE).hostname;
+      const deAfueraAProposito = new Set(['wa.me', new URL(CASO_SITIO).hostname]);
       const absolutos = [...new Set(enlaces.filter((h) => /^https?:\/\//.test(h)))];
       const afuera = absolutos.filter((h) => {
         const host = new URL(h).hostname;
-        return host !== miDominio && !host.endsWith(`.${miDominio}`) && host !== 'wa.me';
+        return host !== miDominio && !host.endsWith(`.${miDominio}`) && !deAfueraAProposito.has(host);
       });
       verificar(
         afuera.length === 0,
