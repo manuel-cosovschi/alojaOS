@@ -42,7 +42,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://alojaos.shop'),
   alternates: { canonical: '/conv' },
   openGraph: {
-    title: 'AlojaOS — Tus cabañas se reservan solas',
+    title: 'AlojaOS · Tu complejo se reserva mientras dormís',
     description: 'Tu página de reservas, con tu nombre. La seña va a tu cuenta, sin comisión.',
     siteName: 'AlojaOS',
     locale: 'es_AR',

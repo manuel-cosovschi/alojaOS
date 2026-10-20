@@ -9,8 +9,10 @@
 export const VARIANTES = {
   base: {
     para: 'Para complejos de 3 a 15 unidades',
-    titulo: 'Tus cabañas se reservan solas. Y nunca',
-    acento: 'dos veces la misma noche',
+    // El mismo titular que la página de inicio: quien llega de un anuncio y
+    // después entra al home no tiene que leer otra promesa.
+    titulo: 'Tu complejo se reserva',
+    acento: 'mientras dormís.',
     bajada: 'Tu propia página de reservas, con tu nombre. El huésped elige las noches, ve el precio, transfiere la seña a tu cuenta y vos confirmás desde el teléfono.',
   },
   comision: {
