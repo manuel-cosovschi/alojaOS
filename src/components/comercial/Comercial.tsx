@@ -1222,8 +1222,10 @@ function Pie() {
   const titulo = 'text-[11px] font-semibold uppercase tracking-[0.16em] text-white';
   return (
     <footer className="px-6 py-12" style={{ background: NOCHE.fondo, borderTop: `1px solid ${NOCHE.borde}` }}>
-      <div className="mx-auto grid max-w-6xl gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr]">
-        <div className="max-w-xs">
+      {/* En el celular, secciones y contacto van lado a lado: una abajo de la otra
+          el pie medía casi dos pantallas. */}
+      <div className="mx-auto grid max-w-6xl grid-cols-2 gap-x-6 gap-y-10 lg:grid-cols-[1.4fr_1fr_1fr]">
+        <div className="col-span-2 max-w-xs lg:col-span-1">
           <p className="text-lg font-black italic tracking-tight">AlojaOS</p>
           <p className="mt-2 text-sm" style={{ color: NOCHE.textoSuave }}>
             Reservas para complejos chicos. Hecho en Mar del Plata.
@@ -1250,8 +1252,11 @@ function Pie() {
               </a>
             </li>
             <li>
-              <a className={`${enlace} break-all`} style={{ color: NOCHE.textoSuave }} href={`mailto:${MAIL_CONTACTO}`}>
-                {MAIL_CONTACTO}
+              {/* «Mail» y no la dirección: en media pantalla de celular la
+                  dirección se partía en dos renglones. Está en el enlace, y
+                  entera en la sección de arriba. */}
+              <a className={enlace} style={{ color: NOCHE.textoSuave }} href={`mailto:${MAIL_CONTACTO}`}>
+                Mail
               </a>
             </li>
             <li>
