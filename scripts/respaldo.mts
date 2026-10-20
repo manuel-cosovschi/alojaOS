@@ -75,6 +75,8 @@ const TABLAS = [
   // entera; restaurarlas no hace falta, pero un respaldo que elige qué copiar
   // es uno que algún día se olvida de algo que sí hacía falta.
   'demos',
+  // Las consultas de /conv: la única copia de quién pidió que le escriban.
+  'consultas',
 ] as const;
 
 if (!TOKEN || !REF) {

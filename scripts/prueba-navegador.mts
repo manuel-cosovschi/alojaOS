@@ -349,7 +349,7 @@ async function main() {
   await page.getByLabel('Nombre y apellido').fill(HUESPED);
   await page.getByLabel('DNI').fill('30999888');
   await page.getByLabel('Teléfono').fill('5490000009999');
-  await page.getByLabel('Mail').fill('prueba@ejemplo.test');
+  await page.getByLabel('Mail').fill('delivered+navegador@resend.dev');
 
   await page.getByRole('button', { name: 'Reservar' }).click();
   await page.waitForTimeout(1200);
@@ -538,7 +538,7 @@ async function main() {
           );
         }
         verificar(
-          aviso?.destino === 'prueba@ejemplo.test',
+          aviso?.destino === 'delivered+navegador@resend.dev',
           'y con la dirección a la que se habría mandado',
           `destino = ${aviso?.destino}`
         );
