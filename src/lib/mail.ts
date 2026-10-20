@@ -79,7 +79,8 @@ export async function avisar(
   return resultado;
 }
 
-async function mandar(mail: Mail): Promise<ResultadoAviso> {
+/** Manda un mail sin anotarlo en `avisos`: lo usa también la consulta de `/conv`. */
+export async function mandar(mail: Mail): Promise<ResultadoAviso> {
   const clave = process.env.RESEND_API_KEY;
   const de = mail.de ?? remitente();
 
