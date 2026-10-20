@@ -17,6 +17,53 @@ const TODOS = { ...VIDEOS, 'las-canas': CASO_VIDEO };
 type Clave = keyof typeof TODOS;
 
 /**
+ * Cuando el teléfono no deja arrancarlo solo.
+ *
+ * Con «Ahorro de batería» o «Datos reducidos», iOS frena todo video que arranca
+ * solo, aunque esté sin sonido: `play()` se rechaza y el video queda en el
+ * primer cuadro con el botón de play encima. No hay forma de saltear eso, y no
+ * hay que buscarla: es lo que la persona eligió. Lo que sí se puede es no
+ * pedirle que encuentre el video y lo toque: el primer toque en cualquier
+ * parte de la página es un gesto suyo, y con un gesto `play()` sí anda.
+ *
+ * `frenados` son los que todavía no arrancaron nunca, se hayan visto o no: el
+ * gesto los destraba a todos juntos. iOS destraba video por video, y uno que
+ * llega a la pantalla después del toque volvería a pedir otro.
+ */
+const frenados = new Set<HTMLVideoElement>();
+const visibles = new WeakSet<HTMLVideoElement>();
+let hayEscuchas = false;
+
+function destrabar() {
+  for (const video of frenados) {
+    // Arrancarlo dentro del gesto lo destraba para siempre. Si en ese momento
+    // no está en pantalla, se frena enseguida: queda listo para cuando llegue.
+    video
+      .play()
+      .then(() => {
+        frenados.delete(video);
+        if (!visibles.has(video)) video.pause();
+        if (frenados.size === 0) quitarEscuchas();
+      })
+      .catch(() => {});
+  }
+}
+
+// Las escuchas se ponen recién cuando un video no pudo arrancar solo: en un
+// teléfono que los deja arrancar, la página no escucha ningún toque de más.
+function ponerEscuchas() {
+  if (hayEscuchas) return;
+  hayEscuchas = true;
+  document.addEventListener('touchend', destrabar, { passive: true });
+  document.addEventListener('click', destrabar);
+}
+function quitarEscuchas() {
+  hayEscuchas = false;
+  document.removeEventListener('touchend', destrabar);
+  document.removeEventListener('click', destrabar);
+}
+
+/**
  * El video, en bucle y sin sonido.
  *
  * ------------------------------------------------------------------
@@ -47,18 +94,31 @@ export function Video({ cual, className = '' }: { cual: Clave; className?: strin
     const sinMovimiento = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     setQuieto(sinMovimiento);
     if (sinMovimiento) return;
+    frenados.add(video);
 
     const observador = new IntersectionObserver(
       (entradas) => {
         for (const e of entradas) {
-          if (e.isIntersecting) video.play().catch(() => {});
-          else video.pause();
+          if (e.isIntersecting) {
+            visibles.add(video);
+            video
+              .play()
+              .then(() => frenados.delete(video))
+              .catch(() => ponerEscuchas());
+          } else {
+            visibles.delete(video);
+            video.pause();
+          }
         }
       },
       { threshold: 0.25 }
     );
     observador.observe(video);
-    return () => observador.disconnect();
+    return () => {
+      observador.disconnect();
+      frenados.delete(video);
+      if (frenados.size === 0) quitarEscuchas();
+    };
   }, []);
 
   return (
