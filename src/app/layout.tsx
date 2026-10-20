@@ -60,7 +60,12 @@ const archivo = Archivo({
  */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es-AR" className={archivo.variable}>
+    // `suppressHydrationWarning`: la página comercial le agrega `con-js` al
+    // <html> con un script, antes de que cargue React, a propósito (ver
+    // Revelar.tsx). React veía esa clase de más y avisaba en cada carga; un
+    // aviso que siempre está enseña a no leer los avisos. Alcanza sólo a los
+    // atributos de esta etiqueta, no a lo que tiene adentro.
+    <html lang="es-AR" className={archivo.variable} suppressHydrationWarning>
       <body className="min-h-screen antialiased">{children}</body>
     </html>
   );
