@@ -82,6 +82,9 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     // Nada de nuestra marca acá: esta página es del complejo.
     twitter: { card: 'summary', title: titulo, description: descripcion },
+    // La copia de una demo vive tres días y es de un visitante: no tiene nada
+    // que hacer en un buscador.
+    ...(complejo.es_demo ? { robots: { index: false, follow: false } } : {}),
   };
 }
 
@@ -112,6 +115,7 @@ export default async function Pagina() {
 
   return (
     <div style={estilo} className="min-h-screen">
+      {complejo.es_demo && <CartelDelHuespedDeDemo />}
       <header className="border-b border-black/10 px-4 py-6 sm:px-8">
         <div className="mx-auto max-w-3xl">
           <h1 className="text-2xl font-semibold sm:text-3xl">{complejo.nombre}</h1>
@@ -189,4 +193,27 @@ function NoExiste({ slug }: { slug: string }) {
   );
 }
 
-
+/**
+ * En la página del huésped de una demo: dónde estás y cómo volver.
+ *
+ * El visitante llega acá desde el último paso de la guía, en otra pestaña, a
+ * jugar a ser huésped. Sin esto, la página es idéntica a la de un complejo de
+ * verdad —que es justamente lo que se quiere mostrar— y no hay nada que le
+ * diga que la reserva que haga le va a aparecer en el panel, ni cómo volver.
+ */
+function CartelDelHuespedDeDemo() {
+  const panel = `${(process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/$/, '')}/panel`;
+  return (
+    <div className="bg-[#1b2b26] px-4 py-3 text-sm text-white sm:px-8" data-cartel-demo>
+      <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-2">
+        <p>
+          <strong>Ésta es la página de tu demo.</strong>{' '}
+          <span className="opacity-80">Reservá como si fueras un huésped: no sale ningún mail.</span>
+        </p>
+        <a href={panel} className="font-semibold underline">
+          Volver al panel →
+        </a>
+      </div>
+    </div>
+  );
+}

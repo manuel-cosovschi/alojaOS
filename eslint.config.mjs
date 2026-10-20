@@ -33,6 +33,10 @@ export default [
       // El proyecto usa `any` en los puentes con PostgREST, donde la forma de
       // la respuesta la decide la base y no el tipo. Avisa, no frena.
       '@typescript-eslint/no-explicit-any': 'warn',
+      // Un argumento con guion bajo adelante está ahí porque la firma lo pide
+      // —el estado anterior de `useActionState`, por ejemplo— y no se usa a
+      // propósito. Es la convención, y sin esto habría que inventarle un uso.
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
   {

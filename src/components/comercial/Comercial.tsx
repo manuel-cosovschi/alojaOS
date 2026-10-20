@@ -69,7 +69,8 @@ import { Captura, Marco, Telefono } from './Pantallas';
 // dice de dónde se sacó la imagen, no a dónde mandar a una persona.
 import { CAPTURAS_SACADAS_EL } from './capturas.generado';
 import { Revelar } from './Revelar';
-import { Video, DemoEmbebido } from './Video';
+import { Video } from './Video';
+import { BotonDemo } from './BotonDemo';
 import { VIDEOS_GRABADOS_EL } from './videos.generado';
 import { CASO_CAPTURAS, CASO_GRABADO_EL, CASO_SITIO } from './caso.generado';
 import { Check, Cruz, Flecha, Punto } from './Iconos';
@@ -78,6 +79,7 @@ import Image from 'next/image';
 const SECCIONES = [
   { id: 'problema', texto: 'El problema' },
   { id: 'producto', texto: 'El producto' },
+  { id: 'demo', texto: 'Demo' },
   { id: 'caso', texto: 'El caso' },
   { id: 'cuenta', texto: 'La cuenta' },
   { id: 'precio', texto: 'Precio' },
@@ -436,7 +438,7 @@ function Hero() {
 
           <div className="mt-8 flex flex-wrap gap-3">
             <BotonPrincipal href={ENLACE_WHATSAPP}>Hablemos por WhatsApp</BotonPrincipal>
-            <BotonSecundario href="#producto">Ver el producto</BotonSecundario>
+            <BotonSecundario href="#demo">Probá el demo guiado</BotonSecundario>
           </div>
 
           {/* Las tres cosas que esta persona pregunta antes de nada. */}
@@ -807,51 +809,60 @@ function LaPaginaDelHuesped() {
 }
 
 /**
- * El demo, adentro de la página.
+ * El demo guiado: entrar como dueño a una copia propia del sistema.
  *
- * Es lo único de toda la página que no hay que creer: no es una captura, ni un
- * video, ni una promesa. Es el sistema, con su base del otro lado, corriendo
- * adentro de un marco. Se puede elegir fechas y reservar desde acá.
+ * Antes acá había un marco con la página del huésped del complejo de ejemplo.
+ * Mostraba la mitad del producto —la que ve el huésped— y dejaba afuera la que
+ * el dueño usa todos los días, que es la que se vende. Ahora el botón arma una
+ * copia entera para quien lo toca y lo deja en el panel con una guía que lo
+ * lleva por cada pantalla, como el demo de GastroOS.
  *
- * Por eso va después de las dos secciones de producto y antes de la regla: el
- * que llegó hasta acá ya vio qué hace y ahora puede comprobarlo, que es
- * exactamente el momento en que una página de venta deja de tener que
- * convencer.
+ * La sección quedó más baja que antes: el marco del teléfono medía casi una
+ * pantalla, y ahora el lugar lo ocupa una captura chica y tres renglones.
  */
 function ElDemo() {
+  const pasos = [
+    'Te llega una seña con su comprobante, y la confirmás.',
+    'Cerrás fechas, cambiás un precio, probás tus colores.',
+    'Reservás como huésped en tu página y la ves llegar al panel.',
+  ];
   return (
-    <Seccion>
-      <div className="mx-auto max-w-4xl">
+    <Seccion id="demo">
+      <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_.95fr]">
         <div data-revelar>
-          <Rotulo centrado>Sin registrarte ni dejar un mail</Rotulo>
+          <Rotulo>Sin registrarte ni dejar un mail</Rotulo>
           <div className="mt-4">
-            <Titulo centrado acento="probalo acá mismo">
-              No hace falta que nos creas:
-            </Titulo>
+            <Titulo acento="como si fuera tuyo.">Probalo por dentro,</Titulo>
           </div>
-          <Bajada centrado className="mt-5 max-w-2xl">
-            Es un complejo de ejemplo con sus cuatro cabañas y sus precios
-            cargados. Lo que ves es el sistema, no una maqueta: elegí unas
-            noches y reservá.
+          <Bajada className="mt-5 max-w-xl">
+            Te armamos una copia del sistema con un complejo de ejemplo y entrás
+            como su dueño. Una guía te lleva por cada pantalla en dos minutos.
           </Bajada>
+          <ol className="mt-7 space-y-3">
+            {pasos.map((p, i) => (
+              <li key={p} className="flex items-start gap-3 text-[15px] leading-snug" style={{ color: NOCHE.textoSuave }}>
+                <span
+                  className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-black"
+                  style={{ background: `${NOCHE.menta}22`, color: NOCHE.menta }}
+                >
+                  {i + 1}
+                </span>
+                {p}
+              </li>
+            ))}
+          </ol>
+          <div className="mt-8">
+            <BotonDemo />
+          </div>
+          <p className="mt-4 text-sm" style={{ color: NOCHE.textoTenue }}>
+            Lo que hagas lo ves sólo vos, y no sale ningún mail.
+          </p>
         </div>
 
-        <div className="mt-10" data-revelar>
-          <div
-            className="mx-auto w-full max-w-[380px] overflow-hidden rounded-[2rem] p-2.5"
-            style={{ background: '#0b2a2c', border: `1px solid ${NOCHE.borde}`, boxShadow: '0 26px 60px rgba(0,0,0,.45)' }}
-          >
-            <div className="overflow-hidden rounded-[1.5rem] bg-white">
-              <DemoEmbebido direccion={DEMO} />
-            </div>
-          </div>
-          <p className="mt-5 text-center text-sm" style={{ color: NOCHE.textoTenue }}>
-            ¿Preferís verlo en grande?{' '}
-            <a className="underline transition hover:text-white" href={DEMO} target="_blank" rel="noopener">
-              Abrilo en otra pestaña
-            </a>
-            .
-          </p>
+        <div data-revelar>
+          <Marco>
+            <Captura cual="panel-senas" sizes="(max-width: 1024px) 90vw, 520px" />
+          </Marco>
         </div>
       </div>
     </Seccion>

@@ -256,7 +256,14 @@ echo
 # dos filas con el mismo número mandan a mirar la que no es. Ya pasó con el
 # `lpad(n, 2)` de prueba-base.sql, que recortaba y hacía que la 103, la 104 y la
 # 105 se imprimieran todas como «10».
-REPETIDOS=$(grep -oP '^  \(\K\d+(?=, )' "$RAIZ/scripts/verificar-produccion.sql" | sort | uniq -d)
+#
+# Y las filas sueltas del final, las de `SELECT 86, '...'` unidas con UNION ALL:
+# la primera versión de este chequeo sólo miraba las de la lista `(86, '...')`,
+# y por eso no vio que las cinco de la 023 repetían los números 86 a 90 de
+# arriba. Un chequeo de duplicados que mira la mitad de las filas encuentra la
+# mitad de los duplicados.
+REPETIDOS=$( { grep -oP '^  \(\K\d+(?=, )' "$RAIZ/scripts/verificar-produccion.sql";
+               grep -oP '^SELECT \K\d+(?=, )' "$RAIZ/scripts/verificar-produccion.sql"; } | sort | uniq -d)
 if [ -n "$REPETIDOS" ]; then
   echo "   ✗ verificar-produccion.sql tiene números de fila repetidos:"
   echo "$REPETIDOS" | sed 's/^/     /'

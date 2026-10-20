@@ -481,29 +481,68 @@ SELECT orden,
  UNION ALL
 -- Los frenos de la migración 023. Sin esto, cualquiera traba el calendario de
 -- un complejo con un script de diez líneas: está probado, no supuesto.
-SELECT 86, 'limites_de_reserva() existe',
+--
+-- Del 150 en adelante. Primero llevaron del 86 al 90, que ya eran de filas de
+-- arriba, y el chequeo de repetidos no lo vio porque sólo leía las filas con
+-- la forma `(86, '...')`. Ver `prueba-local.sh`.
+SELECT 150, 'limites_de_reserva() existe',
        CASE WHEN EXISTS (SELECT 1 FROM pg_proc WHERE proname='limites_de_reserva') THEN 'ok' ELSE 'FALTA' END
 UNION ALL
-SELECT 87, 'crear_reserva frena por mail, por complejo y por ritmo',
+SELECT 151, 'crear_reserva frena por mail, por complejo y por ritmo',
        CASE WHEN (SELECT prosrc FROM pg_proc WHERE proname='crear_reserva') LIKE '%demasiadas_tuyas%'
              AND (SELECT prosrc FROM pg_proc WHERE proname='crear_reserva') LIKE '%complejo_saturado%'
              AND (SELECT prosrc FROM pg_proc WHERE proname='crear_reserva') LIKE '%muy_rapido%'
             THEN 'ok' ELSE 'FALTA' END
 UNION ALL
-SELECT 88, 'datos_para_transferir NO acepta el slug',
+SELECT 152, 'datos_para_transferir NO acepta el slug',
        CASE WHEN NOT EXISTS (
               SELECT 1 FROM pg_proc WHERE proname='datos_para_transferir'
                AND pg_get_function_identity_arguments(oid)='p_slug text')
             THEN 'ok' ELSE 'FALTA' END
 UNION ALL
-SELECT 89, 'datos_para_transferir pide el id de la reserva',
+SELECT 153, 'datos_para_transferir pide el id de la reserva',
        CASE WHEN EXISTS (
               SELECT 1 FROM pg_proc WHERE proname='datos_para_transferir'
                AND pg_get_function_identity_arguments(oid)='p_reserva uuid')
             THEN 'ok' ELSE 'FALTA' END
 UNION ALL
-SELECT 90, 'exportar_complejo() existe y NO la puede llamar un visitante',
+SELECT 154, 'exportar_complejo() existe y NO la puede llamar un visitante',
        CASE WHEN EXISTS (SELECT 1 FROM pg_proc WHERE proname='exportar_complejo')
              AND NOT has_function_privilege('anon', (SELECT oid FROM pg_proc WHERE proname='exportar_complejo'), 'EXECUTE')
+            THEN 'ok' ELSE 'FALTA' END
+UNION ALL
+-- La 025: una demo para cada visitante. Que la plantilla no se vea, que nada
+-- de lo que crea o borra demos se pueda llamar desde afuera, y que una demo no
+-- mande mails.
+SELECT 160, 'hay una plantilla de la demo, y complejo_publico no la devuelve',
+       CASE WHEN EXISTS (SELECT 1 FROM complejos WHERE es_plantilla_demo)
+             AND public.complejo_publico((SELECT slug FROM complejos WHERE es_plantilla_demo)) IS NULL
+            THEN 'ok' ELSE 'FALTA' END
+UNION ALL
+SELECT 161, 'crear, tirar, tocar y limpiar demos es sólo del servidor',
+       CASE WHEN NOT has_function_privilege('anon', 'public.crear_demo(uuid,text)', 'EXECUTE')
+             AND NOT has_function_privilege('authenticated', 'public.crear_demo(uuid,text)', 'EXECUTE')
+             AND NOT has_function_privilege('authenticated', 'public.tirar_demo(uuid)', 'EXECUTE')
+             AND NOT has_function_privilege('authenticated', 'public.tocar_demo(uuid)', 'EXECUTE')
+             AND NOT has_function_privilege('authenticated', 'public.limpiar_demos()', 'EXECUTE')
+             AND has_function_privilege('service_role', 'public.crear_demo(uuid,text)', 'EXECUTE')
+            THEN 'ok' ELSE 'FALTA' END
+UNION ALL
+SELECT 162, 'la tabla de demos no la lee nadie desde la API',
+       CASE WHEN NOT has_table_privilege('anon', 'public.demos', 'SELECT')
+             AND NOT has_table_privilege('authenticated', 'public.demos', 'SELECT')
+            THEN 'ok' ELSE 'FALTA' END
+UNION ALL
+SELECT 163, 'DEMO es un estado de aviso, y sólo vale para reservas de una demo',
+       CASE WHEN (SELECT prosrc FROM pg_proc WHERE proname='anotar_aviso') LIKE '%no_es_demo%'
+             AND (SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='avisos_estado_check') LIKE '%DEMO%'
+            THEN 'ok' ELSE 'FALTA' END
+UNION ALL
+SELECT 164, 'el servidor se entera de que una reserva es de demo antes de mandar el mail',
+       CASE WHEN (SELECT prosrc FROM pg_proc WHERE proname='datos_del_aviso') LIKE '%es_demo%'
+            THEN 'ok' ELSE 'FALTA' END
+UNION ALL
+SELECT 165, 'limpiar_demos nunca borra una cuenta que no sea del dominio de las demos',
+       CASE WHEN (SELECT prosrc FROM pg_proc WHERE proname='limpiar_demos') LIKE '%@demo.alojaos.shop%'
             THEN 'ok' ELSE 'FALTA' END
 ORDER BY orden;

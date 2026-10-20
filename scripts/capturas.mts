@@ -146,11 +146,18 @@ async function nadieAjenoEnLaLista(): Promise<void> {
         '   de las capturas, y sacar la foto a ciegas puede publicar datos de otra persona.'
     );
   }
+  // Sólo en el complejo que se fotografía. La primera versión miraba todos, y
+  // con las demos de los visitantes —cada una trae sus señas de ejemplo— no
+  // habría sacado una foto nunca más.
+  const cabecera = { apikey: SERVICIO, Authorization: `Bearer ${SERVICIO}` };
+  const complejos = await fetch(`${URL_SUPA}/rest/v1/complejos?slug=eq.${SLUG}&select=id`, { headers: cabecera });
+  const [complejo] = complejos.ok ? ((await complejos.json()) as Array<{ id: string }>) : [];
+  if (!complejo) throw new Error(`no encontré el complejo ${SLUG} para revisar sus señas`);
   const res = await fetch(
-    `${URL_SUPA}/rest/v1/reservas?estado=eq.HOLD_TRANSFER` +
+    `${URL_SUPA}/rest/v1/reservas?estado=eq.HOLD_TRANSFER&complejo_id=eq.${complejo.id}` +
       `&huesped_email=neq.${encodeURIComponent(MAIL_HUESPED)}` +
       '&select=huesped_nombre,huesped_email,check_in,check_out',
-    { headers: { apikey: SERVICIO, Authorization: `Bearer ${SERVICIO}` } }
+    { headers: cabecera }
   );
   if (!res.ok) throw new Error(`no pude revisar las señas del demo: HTTP ${res.status}`);
   const ajenas = (await res.json()) as Array<{ huesped_nombre: string; check_in: string; check_out: string }>;

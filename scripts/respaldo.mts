@@ -71,6 +71,10 @@ const TABLAS = [
   'config_calendario',
   'objetivos_temporada',
   'avisos',
+  // Las demos de los visitantes. Se copian para que el respaldo sea la base
+  // entera; restaurarlas no hace falta, pero un respaldo que elige qué copiar
+  // es uno que algún día se olvida de algo que sí hacía falta.
+  'demos',
 ] as const;
 
 if (!TOKEN || !REF) {

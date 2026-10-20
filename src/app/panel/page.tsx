@@ -11,6 +11,7 @@ import {
   saludDeLosPrecios,
   reglasDe,
   tipografiasDisponibles,
+  miDemo,
 } from '@/lib/panel';
 import { Senas } from '@/components/Senas';
 import { SaludDelReloj } from '@/components/SaludDelReloj';
@@ -26,6 +27,10 @@ import { ReglasDeTemporada } from '@/components/ReglasDeTemporada';
 import { DatosDelComplejo } from '@/components/DatosDelComplejo';
 import { LlevarseLosDatos } from '@/components/LlevarseLosDatos';
 import { Marca } from '@/components/Marca';
+import { Guia } from '@/components/Guia';
+import { CartelDeDemo } from '@/components/CartelDeDemo';
+import { salirDeLaDemo } from '@/actions/demo';
+import { ENLACE_WHATSAPP } from '@/lib/constants';
 
 /**
  * El panel del dueño.
@@ -42,7 +47,11 @@ export const dynamic = 'force-dynamic';
 
 export const metadata = { title: 'Panel — AlojaOS' };
 
-export default async function Panel() {
+export default async function Panel({
+  searchParams,
+}: {
+  searchParams: Promise<{ guia?: string }>;
+}) {
   const usuario = await usuarioActual();
   if (!usuario) redirect('/login');
 
@@ -51,10 +60,12 @@ export default async function Panel() {
   // no dependen entre sí.
   // Las tres en paralelo. La lista de tipografías es igual para todos los
   // complejos, así que se pide una vez y no una por complejo.
-  const [salud, saludComprobante, tipografias] = await Promise.all([
+  const [salud, saludComprobante, tipografias, demo, { guia }] = await Promise.all([
     saludDelVencimiento(),
     saludDelComprobante(),
     tipografiasDisponibles(),
+    miDemo(),
+    searchParams,
   ]);
 
   // Las señas de cada complejo, en paralelo: son consultas independientes y
@@ -76,13 +87,20 @@ export default async function Panel() {
 
   return (
     <div className="min-h-screen bg-[#f6f4ef] text-[#1b2b26]">
+      {/* En una demo: el cartel arriba de todo y la guía. La guía arranca sola
+          cuando se llega desde «Probá el demo» (`?guia=1`), una sola vez por
+          navegador. */}
+      {demo && <CartelDeDemo whatsapp={ENLACE_WHATSAPP} />}
+      {demo && <Guia arrancarSola={guia === '1'} paginaDelHuesped={direccionDelComplejo(demo.slug)} />}
       <header className="border-b border-black/10 px-4 py-4 sm:px-8">
         <div className="mx-auto flex max-w-4xl items-baseline justify-between gap-4">
           <div>
             <h1 className="text-xl font-semibold">AlojaOS</h1>
-            <p className="text-xs opacity-60">{usuario.email}</p>
+            {/* La cuenta de una demo es un mail inventado de usar y tirar:
+                mostrarlo sólo confunde. */}
+            <p className="text-xs opacity-60">{demo ? 'Demo' : usuario.email}</p>
           </div>
-          <form action={salir}>
+          <form action={demo ? salirDeLaDemo : salir}>
             <button type="submit" className="text-sm underline opacity-70">
               Salir
             </button>
@@ -114,6 +132,7 @@ export default async function Panel() {
                       huésped, porque vive en una pantalla que hasta hoy no
                       estaba. */}
                   <a
+                    data-guia="pagina"
                     className="text-sm underline opacity-70"
                     href={direccionDelComplejo(complejo.slug)}
                     target="_blank"
@@ -129,16 +148,18 @@ export default async function Panel() {
                   <AvisosQueNoSalieron avisos={avisos} zonaHoraria={complejo.zona_horaria} />
                 </div>
 
-                <Senas
-                  senas={senas}
-                  moneda={complejo.moneda}
-                  zonaHoraria={complejo.zona_horaria}
-                  porcentajeSena={Number(complejo.porcentaje_sena)}
-                />
+                <div data-guia="senas">
+                  <Senas
+                    senas={senas}
+                    moneda={complejo.moneda}
+                    zonaHoraria={complejo.zona_horaria}
+                    porcentajeSena={Number(complejo.porcentaje_sena)}
+                  />
+                </div>
 
                 {/* Las fechas cerradas van después de las señas: una seña tiene
                     plazo y esto no. Lo urgente primero. */}
-                <div className="mt-4">
+                <div className="mt-4" data-guia="fechas">
                   <Fechas
                     complejoId={complejo.id}
                     unidades={unidades}
@@ -152,7 +173,7 @@ export default async function Panel() {
                     por temporada, no todos los días. Pero su aviso de qué no se
                     puede cotizar está adentro del bloque, así que una unidad
                     invendible se ve sin tener que abrir nada. */}
-                <div className="mt-4">
+                <div className="mt-4" data-guia="precios">
                   <Precios
                     complejoId={complejo.id}
                     unidades={unidades}
@@ -166,7 +187,7 @@ export default async function Panel() {
                 {/* Las reglas de la temporada al final, pero el cronómetro de
                     `ultima_fecha` está adentro y en rojo: es la única falla de
                     este sistema que llega sola, sin que nadie haga nada. */}
-                <div className="mt-4">
+                <div className="mt-4" data-guia="reglas">
                   <ReglasDeTemporada complejoId={complejo.id} reglas={reglas} />
                 </div>
 
@@ -174,7 +195,7 @@ export default async function Panel() {
                     al principio y después casi nunca. La dirección se arma con
                     `direccionDelComplejo()`, la misma que el enlace de arriba:
                     si el dominio cambia, cambia en un solo lugar. */}
-                <div className="mt-4" id={`datos-${complejo.slug}`}>
+                <div className="mt-4" id={`datos-${complejo.slug}`} data-guia="datos">
                   <DatosDelComplejo
                     complejo={complejo}
                     unidades={unidades}
@@ -185,12 +206,12 @@ export default async function Panel() {
                 {/* La marca al final: se toca una vez, al principio. Y tiene
                     vista previa porque dar un campo de color sin forma de ver
                     el resultado es peor que no darlo. */}
-                <div className="mt-4">
+                <div className="mt-4" data-guia="marca">
                   <Marca complejo={complejo} tipografias={tipografias} />
                 </div>
 
                 {/* Abajo de todo: es lo que se usa una vez, no todos los días. */}
-                <div className="mt-4">
+                <div className="mt-4" data-guia="exportar">
                   <LlevarseLosDatos complejoId={complejo.id} nombre={complejo.nombre} />
                 </div>
               </section>

@@ -379,3 +379,19 @@ export async function tipografiasDisponibles(): Promise<Tipografia[]> {
   }
   return (data ?? []) as Tipografia[];
 }
+
+/**
+ * La demo de esta sesión, o null si es un dueño de verdad.
+ *
+ * Por `mi_demo()`, que contesta sólo por `auth.uid()`: no hay forma de
+ * preguntarle por la demo de otro.
+ */
+export async function miDemo(): Promise<{ complejo_id: string; slug: string; vence_el: string } | null> {
+  const supabase = await clienteConSesion();
+  const { data, error } = await supabase.rpc('mi_demo');
+  if (error) {
+    console.error('[miDemo] la base devolvió un error:', error.message);
+    return null;
+  }
+  return (data as { complejo_id: string; slug: string; vence_el: string } | null) ?? null;
+}
