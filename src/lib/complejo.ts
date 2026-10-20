@@ -53,6 +53,8 @@ export interface Complejo {
   porcentaje_sena: number;
   horas_vencimiento_sena: number;
   reservas_habilitadas: boolean;
+  /** Es la copia de un visitante de la demo (migración 025). */
+  es_demo?: boolean;
   unidades: Unidad[];
   calendario: ConfigCalendario | null;
   bloques_fijos: BloqueFijo[];

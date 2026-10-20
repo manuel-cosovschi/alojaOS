@@ -69,13 +69,17 @@ import { Captura, Marco, Telefono } from './Pantallas';
 // dice de dónde se sacó la imagen, no a dónde mandar a una persona.
 import { CAPTURAS_SACADAS_EL } from './capturas.generado';
 import { Revelar } from './Revelar';
-import { Video, DemoEmbebido } from './Video';
+import { Video } from './Video';
+import { BotonDemo } from './BotonDemo';
 import { VIDEOS_GRABADOS_EL } from './videos.generado';
+import { CASO_CAPTURAS, CASO_GRABADO_EL, CASO_SITIO } from './caso.generado';
 import { Check, Cruz, Flecha, Punto } from './Iconos';
+import Image from 'next/image';
 
 const SECCIONES = [
   { id: 'problema', texto: 'El problema' },
   { id: 'producto', texto: 'El producto' },
+  { id: 'demo', texto: 'Demo' },
   { id: 'caso', texto: 'El caso' },
   { id: 'cuenta', texto: 'La cuenta' },
   { id: 'precio', texto: 'Precio' },
@@ -214,10 +218,10 @@ function Titulo({
       className={[
         'font-black italic uppercase tracking-[-0.03em]',
         como === 'h1'
-          // Más chico que el del molde (60 px) porque el titular de acá tiene
-          // el doble de palabras: a 65 px eran cinco renglones, y un titular de
-          // cinco renglones deja de leerse como un titular.
-          ? 'text-[2.3rem] leading-[0.98] sm:text-5xl lg:text-[3.35rem]'
+          // El titular tiene cinco palabras, así que entra al tamaño grande sin
+          // pasar de tres renglones. El anterior tenía el doble y había que
+          // achicarlo a 54 px para que no se hiciera de cinco.
+          ? 'text-[2.6rem] leading-[0.96] sm:text-6xl lg:text-[4.1rem]'
           : 'text-[1.9rem] leading-[1.02] sm:text-4xl lg:text-5xl',
         centrado ? 'text-center' : '',
       ].join(' ')}
@@ -414,8 +418,13 @@ function Hero() {
           </span>
 
           <div className="mt-6">
-            <Titulo como="h1" acento="dos veces la misma noche">
-              Tus cabañas se reservan solas. Y nunca
+            {/* Lo que se vende es el resultado, dicho como lo vive el dueño: la
+                consulta de las tres de la mañana que hoy espera hasta que se
+                levanta, y que a esa hora ya se la llevó otro. Lo de «nunca dos
+                veces la misma noche» sigue siendo cierto y sigue en la página,
+                pero es una garantía, no una promesa de titular. */}
+            <Titulo como="h1" acento="mientras dormís.">
+              Tu complejo se reserva
             </Titulo>
           </div>
 
@@ -423,13 +432,13 @@ function Hero() {
             Tu propia página de reservas, con tu nombre y tus colores.
           </p>
           <Bajada className="mt-3 max-w-xl">
-            El huésped elige las noches, ve el precio, transfiere la seña y sube
-            el comprobante. Vos confirmás desde el teléfono.
+            El huésped elige las noches, ve el precio y deja la seña a la hora
+            que sea. A la mañana confirmás desde el teléfono.
           </Bajada>
 
           <div className="mt-8 flex flex-wrap gap-3">
             <BotonPrincipal href={ENLACE_WHATSAPP}>Hablemos por WhatsApp</BotonPrincipal>
-            <BotonSecundario href="#producto">Ver el producto</BotonSecundario>
+            <BotonSecundario href="#demo">Probá el demo guiado</BotonSecundario>
           </div>
 
           {/* Las tres cosas que esta persona pregunta antes de nada. */}
@@ -443,7 +452,11 @@ function Hero() {
           </ul>
 
           <p className="mt-6 text-sm" style={{ color: NOCHE.textoTenue }}>
-            El sistema con el que {CASO.nombre}, en {CASO.localidad}, toma sus reservas.
+            Lo usa {CASO.nombre}, en {CASO.localidad}.{' '}
+            <a className="underline transition hover:text-white" href="#caso">
+              Mirá cómo reservan sus huéspedes
+            </a>
+            .
           </p>
         </div>
 
@@ -465,14 +478,27 @@ function Hero() {
 }
 
 /**
- * La cinta, con la frase que resume por qué alguien contrata esto.
+ * La cinta: lo que hace el sistema, en renglones de tres o cuatro palabras.
+ *
+ * Antes era una sola frase de eslogan («Nadie contrata un sistema de reservas…»)
+ * y se leía como un acertijo: había que pararse a pensar qué quería decir, que
+ * es justo lo que una cinta que pasa no te deja hacer. Cosas concretas se
+ * entienden al vuelo.
  *
  * Se mueve sola y en loop. Es la única animación que corre sin que nadie
  * scrollee, y está acá porque una página que se mueve apenas carga se siente
  * viva; con `prefers-reduced-motion` se queda quieta.
  */
 function Cinta() {
-  const frase = 'Nadie contrata un sistema de reservas. Contrata dejar de perder noches.';
+  const cosas = [
+    'Reservas las 24 horas',
+    'Precios por temporada',
+    'Mínimo de noches por fecha',
+    'Señas que vencen solas',
+    'Nunca dos reservas la misma noche',
+    'Tu nombre y tus colores',
+  ];
+  const frase = cosas.join(' · ');
   return (
     <div
       className="overflow-hidden py-5"
@@ -481,21 +507,21 @@ function Cinta() {
       {/* El contenido va dos veces: cuando el desplazamiento llega al 50 %, el
           segundo juego está donde arrancó el primero y el ciclo no se nota.
 
-          Y las ocho copias están `aria-hidden`: para quien usa un lector de
-          pantalla, una cinta que repite la misma frase ocho veces es ocho veces
-          la misma frase. La frase se dice una sola vez, abajo, donde ninguna
-          pantalla la muestra pero todo lector la lee. */}
+          Y las copias están `aria-hidden`: para quien usa un lector de
+          pantalla, una cinta que repite lo mismo dos veces lo lee dos veces.
+          Se dice una sola vez, abajo, donde ninguna pantalla lo muestra pero
+          todo lector lo lee. */}
       <p className="sr-only">{frase}</p>
       <div className="cinta flex w-max gap-10 whitespace-nowrap" aria-hidden>
         {[0, 1].map((juego) => (
           <div key={juego} className="flex gap-10">
-            {[0, 1, 2, 3].map((i) => (
+            {cosas.map((cosa) => (
               <span
-                key={i}
+                key={cosa}
                 className="flex items-center gap-10 text-sm font-bold uppercase tracking-[0.18em]"
                 style={{ color: NOCHE.textoTenue }}
               >
-                {frase}
+                {cosa}
                 <Punto color={NOCHE.accionViva} />
               </span>
             ))}
@@ -783,50 +809,62 @@ function LaPaginaDelHuesped() {
 }
 
 /**
- * El demo, adentro de la página.
+ * El demo guiado: entrar como dueño a una copia propia del sistema.
  *
- * Es lo único de toda la página que no hay que creer: no es una captura, ni un
- * video, ni una promesa. Es el sistema, con su base del otro lado, corriendo
- * adentro de un marco. Se puede elegir fechas y reservar desde acá.
+ * Antes acá había un marco con la página del huésped del complejo de ejemplo.
+ * Mostraba la mitad del producto —la que ve el huésped— y dejaba afuera la que
+ * el dueño usa todos los días, que es la que se vende. Ahora el botón arma una
+ * copia entera para quien lo toca y lo deja en el panel con una guía que lo
+ * lleva por cada pantalla, como el demo de GastroOS.
  *
- * Por eso va después de las dos secciones de producto y antes de la regla: el
- * que llegó hasta acá ya vio qué hace y ahora puede comprobarlo, que es
- * exactamente el momento en que una página de venta deja de tener que
- * convencer.
+ * La sección quedó más baja que antes: el marco del teléfono medía casi una
+ * pantalla, y ahora el lugar lo ocupa una captura chica y tres renglones.
  */
 function ElDemo() {
+  const pasos = [
+    'Te llega una seña con su comprobante, y la confirmás.',
+    'Cerrás fechas, cambiás un precio, probás tus colores.',
+    'Reservás como huésped en tu página y la ves llegar al panel.',
+  ];
   return (
-    <Seccion>
-      <div className="mx-auto max-w-4xl">
+    <Seccion id="demo">
+      <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_.95fr]">
         <div data-revelar>
-          <Rotulo centrado>Sin registrarte ni dejar un mail</Rotulo>
+          <Rotulo>Sin registrarte ni dejar un mail</Rotulo>
           <div className="mt-4">
-            <Titulo centrado acento="probalo acá mismo">
-              No hace falta que nos creas:
-            </Titulo>
+            <Titulo acento="como si fuera tuyo.">Probalo por dentro,</Titulo>
           </div>
-          <Bajada centrado className="mt-5 max-w-2xl">
-            Es un complejo de ejemplo con sus cuatro cabañas y sus precios
-            cargados. Lo que ves es el sistema, no una maqueta: elegí unas
-            noches y reservá.
+          <Bajada className="mt-5 max-w-xl">
+            Te armamos una copia del sistema con un complejo de ejemplo y entrás
+            como su dueño. Una guía te lleva por cada pantalla en dos minutos.
           </Bajada>
+          <ol className="mt-7 space-y-3">
+            {pasos.map((p, i) => (
+              <li key={p} className="flex items-start gap-3 text-[15px] leading-snug" style={{ color: NOCHE.textoSuave }}>
+                <span
+                  className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-black"
+                  style={{ background: `${NOCHE.menta}22`, color: NOCHE.menta }}
+                >
+                  {i + 1}
+                </span>
+                {p}
+              </li>
+            ))}
+          </ol>
+          <div className="mt-8">
+            <BotonDemo />
+          </div>
+          <p className="mt-4 text-sm" style={{ color: NOCHE.textoTenue }}>
+            Lo que hagas lo ves sólo vos, y no sale ningún mail.
+          </p>
         </div>
 
-        <div className="mt-10" data-revelar>
-          <div
-            className="mx-auto w-full max-w-[380px] overflow-hidden rounded-[2rem] p-2.5"
-            style={{ background: '#0b2a2c', border: `1px solid ${NOCHE.borde}`, boxShadow: '0 26px 60px rgba(0,0,0,.45)' }}
-          >
-            <div className="overflow-hidden rounded-[1.5rem] bg-white">
-              <DemoEmbebido direccion={DEMO} />
-            </div>
-          </div>
-          <p className="mt-5 text-center text-sm" style={{ color: NOCHE.textoTenue }}>
-            ¿Preferís verlo en grande?{' '}
-            <a className="underline transition hover:text-white" href={DEMO} target="_blank" rel="noopener">
-              Abrilo en otra pestaña
-            </a>
-            .
+        <div data-revelar>
+          <Marco>
+            <Captura cual="demo-guia" sizes="(max-width: 1024px) 90vw, 560px" />
+          </Marco>
+          <p className="mt-4 text-center text-xs" style={{ color: NOCHE.textoTenue }}>
+            La guía, en el paso de las señas. Captura del {DIA_DE_LAS_CAPTURAS}.
           </p>
         </div>
       </div>
@@ -863,23 +901,65 @@ function LaRegla() {
   );
 }
 
+/**
+ * El caso de éxito: Las Cañas, mostrado con su sistema y no contado.
+ *
+ * Antes esta sección era texto —qué hace el complejo, en cuatro renglones— y
+ * tres tarjetas largas con la auditoría. Ahora lo primero que se ve es la
+ * página de ellos andando: un huésped entra a lascaniasmardecobo.com, toca
+ * «Reservar», elige casa, personas y noches, y ve el precio. Eso lo graba
+ * `npm run caso` sin escribir nada en su sistema (ver el script).
+ *
+ * Lo que NO se muestra es su panel: tiene los datos de huéspedes de verdad. Lo
+ * que la página enseña del panel sale del demo, que tiene datos inventados.
+ *
+ * Y la auditoría se quedó, pero corta: título y cuánto duró a la vista, el
+ * detalle a un toque. Es lo que más credibilidad da y lo que menos se lee.
+ */
 function ElCaso() {
+  const fecha = CASO_GRABADO_EL.split('-').reverse().join('/');
+  const sitio = new URL(CASO_SITIO).hostname;
   return (
     <Seccion id="caso">
-      <div className="mx-auto max-w-3xl">
-        <div data-revelar>
-          <Rotulo>El complejo del que salió</Rotulo>
+      <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-[.8fr_1.2fr]">
+        <div className="order-2 lg:order-1" data-revelar>
+          <Telefono>
+            <Video cual="las-canas" />
+          </Telefono>
+          <p className="mt-4 text-center text-xs" style={{ color: NOCHE.textoTenue }}>
+            Grabado el {fecha} en{' '}
+            <a className="underline transition hover:text-white" href={CASO_SITIO} target="_blank" rel="noopener">
+              {sitio}
+            </a>
+            , sin cortes.
+          </p>
+        </div>
+
+        <div className="order-1 lg:order-2" data-revelar>
+          <Rotulo>Caso de éxito</Rotulo>
           <div className="mt-4">
-            <Titulo acento="con este sistema">{CASO.nombre} toma sus reservas</Titulo>
+            <Titulo acento="con AlojaOS.">{CASO.nombre} reserva</Titulo>
           </div>
           <Bajada className="mt-5">
-            {CASO.unidades} cabañas en {CASO.localidad}, {CASO.provincia}, atendidas
-            por sus dueños. AlojaOS es ese sistema: el mismo que viene andando
-            ahí, auditado entero y vuelto a escribir para que lo pueda usar
-            cualquier complejo de 3 a 15 unidades.
+            {CASO.unidades} cabañas en {CASO.localidad}, atendidas por sus dueños.
+            Sus huéspedes reservan en su propia página, a cualquier hora, y la
+            seña les llega directo a su cuenta.
           </Bajada>
 
-          <ul className="mt-7 grid gap-x-8 gap-y-3 sm:grid-cols-2">
+          <div className="mt-7">
+            <Marco>
+              <Image
+                src={CASO_CAPTURAS.inicio.src}
+                width={CASO_CAPTURAS.inicio.ancho}
+                height={CASO_CAPTURAS.inicio.alto}
+                alt={CASO_CAPTURAS.inicio.que}
+                sizes="(max-width: 1024px) 90vw, 640px"
+                className="h-auto w-full"
+              />
+            </Marco>
+          </div>
+
+          <ul className="mt-6 grid gap-x-8 gap-y-2.5 sm:grid-cols-2">
             {CASO.queHace.map((q) => (
               <li key={q} className="flex items-start gap-3 text-sm leading-relaxed" style={{ color: NOCHE.textoSuave }}>
                 <Check color={NOCHE.menta} />
@@ -887,56 +967,46 @@ function ElCaso() {
               </li>
             ))}
           </ul>
-        </div>
 
-        <div className="mt-16" data-revelar>
-          <Rotulo>La auditoría</Rotulo>
-          <h3 className="mt-4 text-2xl font-black italic uppercase tracking-[-0.03em] sm:text-3xl">
-            Tres errores que encontramos, y cómo quedaron
-          </h3>
-          <Bajada className="mt-4">
-            Contarlos es más útil que decir que el sistema es excelente —sobre
-            todo para alguien a quien ya le prometieron uno excelente—.
-          </Bajada>
+          <div className="mt-7">
+            <BotonSecundario href={CASO_SITIO}>Entrá a su página</BotonSecundario>
+          </div>
         </div>
+      </div>
 
-        <ul className="mt-9 space-y-4">
-          {HALLAZGOS.map((h, i) => (
-            <li key={h.titulo} data-revelar style={{ transitionDelay: `${i * 80}ms` }}>
-              <Tarjeta>
-                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                  <h4 className="font-bold">{h.titulo}</h4>
-                  <span
-                    className="rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider"
-                    style={{ background: 'rgba(209,90,66,.16)', color: '#e0836a' }}
-                  >
-                    {h.cuanto}
-                  </span>
-                </div>
-                <p className="mt-2.5 text-sm leading-relaxed" style={{ color: NOCHE.textoSuave }}>
-                  {h.texto}
-                </p>
-                <p className="mt-3 text-sm leading-relaxed">
-                  <strong style={{ color: NOCHE.menta }}>Cómo quedó:</strong>{' '}
-                  <span style={{ color: NOCHE.textoSuave }}>{h.comoSeArreglo}</span>
-                </p>
+      <div className="mx-auto mt-16 max-w-6xl" data-revelar>
+        <Rotulo>Antes de venderlo, lo auditamos</Rotulo>
+        <h3 className="mt-3 max-w-3xl text-xl font-black italic uppercase tracking-[-0.03em] sm:text-2xl">
+          Tres errores que tenía, y los tres{' '}
+          <span style={{ color: NOCHE.accionViva }}>contestaban que estaba todo bien</span>
+        </h3>
+        <ul className="mt-7 grid gap-4 md:grid-cols-3">
+          {HALLAZGOS.map((h) => (
+            <li key={h.titulo}>
+              <Tarjeta className="h-full">
+                <span
+                  className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider"
+                  style={{ background: 'rgba(209,90,66,.16)', color: '#e0836a' }}
+                >
+                  {h.cuanto}
+                </span>
+                <h4 className="mt-3 font-bold leading-snug">{h.titulo}</h4>
+                {/* El detalle, a un toque: con `details` no hace falta
+                    JavaScript y el lector de pantalla sabe que se despliega. */}
+                <details className="group mt-3 text-sm leading-relaxed" style={{ color: NOCHE.textoSuave }}>
+                  <summary className="cursor-pointer list-none font-semibold" style={{ color: NOCHE.menta }}>
+                    <span className="group-open:hidden">Qué pasaba y cómo quedó +</span>
+                    <span className="hidden group-open:inline">Cerrar −</span>
+                  </summary>
+                  <p className="mt-2.5">{h.texto}</p>
+                  <p className="mt-2.5">
+                    <strong style={{ color: NOCHE.texto }}>Cómo quedó:</strong> {h.comoSeArreglo}
+                  </p>
+                </details>
               </Tarjeta>
             </li>
           ))}
         </ul>
-
-        <div className="mt-8" data-revelar>
-          <Tarjeta>
-            <p className="text-sm leading-relaxed" style={{ color: NOCHE.textoSuave }}>
-              Los tres tienen la misma forma:{' '}
-              <strong style={{ color: NOCHE.texto }}>algo contestaba que estaba bien sin estarlo.</strong>{' '}
-              Ninguno tiraba un error y los tres duraron meses, porque la única
-              forma de notarlos era que alguien fuera a buscar. Esa clase de
-              falla no se arregla revisando mejor: se arregla haciendo que la
-              operación no pueda decir que hizo algo sin haberlo hecho.
-            </p>
-          </Tarjeta>
-        </div>
       </div>
     </Seccion>
   );

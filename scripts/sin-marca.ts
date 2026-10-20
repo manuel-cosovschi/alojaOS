@@ -60,12 +60,22 @@ interface Prohibido {
  * La página comercial de AlojaOS no es la página de un inquilino: es la del
  * producto, y nombrar al complejo del que salió es lo que tiene que hacer. El
  * nombre vive en un solo archivo —`src/lib/caso.ts`, que explica arriba de todo
- * qué se puede escribir ahí y qué no— y es el único exceptuado.
+ * qué se puede escribir ahí y qué no—, más el script que graba su sitio y el
+ * módulo que ese script escribe. Son tres archivos, todos del caso, y ninguno
+ * es código del producto.
  */
 const EL_CASO = [
   {
     archivo: 'src/lib/caso.ts',
     porque: 'es el caso que cuenta la página comercial, con permiso del dueño del complejo',
+  },
+  {
+    archivo: 'scripts/caso-las-canas.mts',
+    porque: 'graba el sitio del caso para la página comercial; tiene que saber cuál es',
+  },
+  {
+    archivo: 'src/components/comercial/caso.generado.ts',
+    porque: 'lo escribe el script del caso: la dirección y la descripción de lo que grabó',
   },
 ];
 

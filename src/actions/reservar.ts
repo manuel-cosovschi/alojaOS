@@ -15,7 +15,7 @@
  * cliente.
  */
 
-import { headers } from 'next/headers';
+import { ipDeQuienPide } from '@/lib/ip';
 import { clienteServicio } from '@/lib/supabase/servicio';
 import { programarAviso } from '@/actions/avisar';
 
@@ -146,23 +146,4 @@ export async function pedirReserva(pedido: Pedido): Promise<Resultado> {
       'No pudimos registrar esa reserva.',
     motivo,
   };
-}
-
-/**
- * La IP de quien está reservando.
- *
- * Sale de las cabeceras que pone la red, no de nada que mande el navegador: el
- * que reserva no puede elegir la suya. `x-forwarded-for` puede traer varias
- * —la del visitante y las de los intermediarios—; la primera es la del
- * visitante.
- *
- * Si no viene ninguna, devuelve `null` y la base no aplica el freno por IP. Es
- * a propósito: inventar una IP sería peor que no tenerla, porque todas las
- * reservas sin IP compartirían el mismo cupo y se frenarían entre ellas.
- */
-async function ipDeQuienPide(): Promise<string | null> {
-  const h = await headers();
-  const reenviada = h.get('x-forwarded-for');
-  if (reenviada) return reenviada.split(',')[0]?.trim() || null;
-  return h.get('x-real-ip')?.trim() || null;
 }

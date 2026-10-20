@@ -84,7 +84,7 @@ async function main() {
     // peor que fallar.
     const comercial = (await page.locator('body').innerText()).toLowerCase();
     verificar(
-      comercial.includes('nunca dos veces la misma noche'),
+      comercial.includes('tu complejo se reserva mientras dormís'),
       'la página comercial se sirve en el dominio principal'
     );
     // Esto buscaba la sección «Qué todavía no hace», que se sacó: era una lista

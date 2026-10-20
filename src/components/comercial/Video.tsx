@@ -1,22 +1,20 @@
 'use client';
 
 /**
- * Un video del sistema andando, y el demo de verdad embebido.
+ * Un video del sistema andando.
  *
- * ==================================================================
- * Por qué son componentes de cliente
- * ==================================================================
- * Los dos necesitan saber algo que sólo se sabe en el navegador: uno, si la
- * persona pidió que las cosas no se muevan; el otro, si ya tocó el botón. Todo
- * lo demás de esta página lo arma el servidor.
+ * Es de cliente porque necesita saber algo que sólo se sabe en el navegador:
+ * si la persona pidió que las cosas no se muevan.
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { NOCHE } from '@/lib/marca-alojaos';
 import { VIDEOS } from './videos.generado';
-import { Flecha } from './Iconos';
+import { CASO_VIDEO } from './caso.generado';
 
-type Clave = keyof typeof VIDEOS;
+/** Los del demo y el del caso, que sale del sitio de Las Cañas con otro script. */
+const TODOS = { ...VIDEOS, 'las-canas': CASO_VIDEO };
+
+type Clave = keyof typeof TODOS;
 
 /**
  * El video, en bucle y sin sonido.
@@ -38,7 +36,7 @@ type Clave = keyof typeof VIDEOS;
  * un video automáticamente, y quedaría un cuadro quieto sin que nada falle.
  */
 export function Video({ cual, className = '' }: { cual: Clave; className?: string }) {
-  const v = VIDEOS[cual];
+  const v = TODOS[cual];
   const ref = useRef<HTMLVideoElement>(null);
   const [quieto, setQuieto] = useState(false);
 
@@ -83,61 +81,5 @@ export function Video({ cual, className = '' }: { cual: Clave; className?: strin
       <source src={v.mp4} type="video/mp4" />
       <source src={v.webm} type="video/webm" />
     </video>
-  );
-}
-
-/**
- * El demo de verdad, adentro de la página.
- *
- * ==================================================================
- * Por qué no se carga solo
- * ==================================================================
- * Un `iframe` que arranca con la página carga un sitio entero —con su base de
- * datos del otro lado— para alguien que a lo mejor nunca llega a esa sección.
- * Así que hasta que no lo tocan, esto es una imagen y un botón.
- *
- * Y cuando lo tocan, lo que aparece no es una simulación: es
- * `cabanias-del-sol.alojaos.shop`, el mismo sitio que se abre en otra pestaña,
- * con el mismo calendario y la misma base. Se puede reservar desde acá.
- *
- * El enlace de «abrirlo en otra pestaña» queda igual, porque un iframe de 300
- * píxeles en un celular es incómodo y porque hay gente que no confía en algo
- * embebido — y tiene razón en no confiar.
- */
-export function DemoEmbebido({ direccion }: { direccion: string }) {
-  const [prendido, setPrendido] = useState(false);
-
-  return (
-    <div className="relative">
-      {prendido ? (
-        <iframe
-          src={direccion}
-          title="El demo de AlojaOS, en vivo"
-          className="h-[640px] w-full border-0"
-          // `sandbox` no se pone: el demo es nuestro, y restringirlo le sacaría
-          // justo lo que tiene que hacer —escribir en la base al reservar—.
-          loading="lazy"
-        />
-      ) : (
-        <button
-          type="button"
-          onClick={() => setPrendido(true)}
-          className="group flex h-[640px] w-full flex-col items-center justify-center gap-4 px-6 text-center transition hover:bg-white/5"
-          style={{ background: 'rgba(255,255,255,.02)' }}
-        >
-          <span
-            className="inline-flex items-center gap-2.5 rounded-xl px-5 py-3 text-[15px] font-bold text-white"
-            style={{ background: NOCHE.accion }}
-          >
-            Probar el demo acá
-            <Flecha />
-          </span>
-          <span className="max-w-xs text-sm leading-relaxed" style={{ color: NOCHE.textoSuave }}>
-            Se abre el sistema de verdad, con su calendario y su base. Podés
-            reservar y ver qué le llega al dueño.
-          </span>
-        </button>
-      )}
-    </div>
   );
 }

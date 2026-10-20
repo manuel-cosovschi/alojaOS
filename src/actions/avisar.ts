@@ -51,6 +51,23 @@ async function mandarAviso(reservaId: string, tipo: TipoDeAviso): Promise<void> 
   }
 
   const d = data as Record<string, unknown>;
+
+  // Una demo no le escribe a nadie. El mail del huésped lo tipea el visitante,
+  // y mandar un correo desde nuestro dominio a la dirección que cualquiera
+  // escriba en un formulario es regalar un formulario para mandar correo. Se
+  // anota como DEMO —la base sólo lo acepta si la reserva es de una demo— y el
+  // panel no lo reclama.
+  if (d.es_demo === true) {
+    const { error: errorDemo } = await servicio.rpc('anotar_aviso', {
+      p_reserva: reservaId,
+      p_tipo: tipo,
+      p_estado: 'DEMO',
+      p_destino: typeof d.email === 'string' ? d.email : null,
+    });
+    if (errorDemo) console.error(`[mandarAviso] no pude anotar el aviso de demo de ${reservaId}:`, errorDemo.message);
+    return;
+  }
+
   const email = typeof d.email === 'string' ? d.email.trim() : '';
 
   if (!email) {

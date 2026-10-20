@@ -62,9 +62,11 @@ const html = `<!doctype html>
   }
   h1 {
     margin-top: 26px;
-    font-size: 86px; line-height: .98; font-weight: 900; font-style: italic;
+    /* Cinco palabras en cuatro renglones. A 112 px el último se metía en el
+       pie; a 92 entran con aire. */
+    font-size: 92px; line-height: .95; font-weight: 900; font-style: italic;
     text-transform: uppercase; letter-spacing: -.03em;
-    max-width: 17ch;
+    max-width: 13ch;
   }
   h1 span { color: ${NOCHE.accionViva}; }
   .pie {
@@ -78,7 +80,7 @@ const html = `<!doctype html>
   <div class="resplandor"></div>
   <div class="contenido">
     <p class="rotulo">Para complejos de 3 a 15 unidades</p>
-    <h1>Tus cabañas se reservan solas. Y nunca <span>dos veces la misma noche</span></h1>
+    <h1>Tu complejo se reserva <span>mientras dormís.</span></h1>
   </div>
   <div class="pie">
     <span class="marca">AlojaOS</span>

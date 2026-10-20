@@ -1032,6 +1032,9 @@ DECLARE
   v JSONB;
   v_unidad UUID := 'bbbbbbbb-0000-0000-0000-000000000002';
 BEGIN
+  -- Desde la 027 los conteos son del que mira: se mira como el dueño del
+  -- complejo donde se planta el hold.
+  PERFORM set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
   v := public.salud_del_vencimiento();
 
   -- Sin pg_cron tiene que decir 'al_leer'. Que diga 'cron' acá sería la
@@ -1075,6 +1078,7 @@ BEGIN
         'aaaaaaaa-0000-0000-0000-000000000001', v_unidad)
        WHERE check_in = '2027-03-10'
     ));
+  PERFORM set_config('request.jwt.claim.sub', '', true);
 END $$;
 
 -- ============================================
@@ -2708,25 +2712,6 @@ BEGIN
     'quedó una firma sin p_ip, y PostgREST elegiría ésa');
 END $$;
 
-\echo ''
--- lpad RECORTA cuando el texto es más largo que el ancho: con 2, la prueba
--- 103 se imprimía como «10», igual que la 104 y la 105. Un número de prueba
--- repetido manda a buscar la prueba equivocada.
--- `NULA` y no `FALLA` cuando la expresión no se evaluó: son dos problemas
--- distintos. Una que falla dice que el sistema hace algo que no debería; una
--- nula dice que la prueba está mal escrita y no comprobó nada.
-SELECT lpad(n::text, 3) || '  ' ||
-       CASE WHEN indeterminada THEN 'NULA  ' WHEN paso THEN 'OK    ' ELSE 'FALLA ' END ||
-       nombre ||
-       CASE WHEN indeterminada
-              THEN E'\n        → la expresión dio NULL: no comprobó nada. Suele ser una comparación contra una columna nula.'
-                   || CASE WHEN coalesce(detalle, '') = '' THEN '' ELSE E'\n        → ' || detalle END
-            WHEN paso OR coalesce(detalle, '') = '' THEN ''
-            ELSE E'\n        → ' || detalle
-       END AS "prueba de la base"
-  FROM resultado ORDER BY n;
-
-
 -- Los datos para transferir: con el slug ya no se pueden pedir, y la reserva
 -- recién hecha los trae.
 DO $$
@@ -2748,6 +2733,260 @@ BEGIN
     v_n = 1,
     format('encontré %s', v_n));
 END $$;
+
+-- ============================================
+-- 22. Una demo para cada visitante
+-- ============================================
+-- La demo es multi-inquilino en el sentido más literal: cualquiera que toca un
+-- botón recibe un complejo. Así que se prueba como se prueba el aislamiento de
+-- dos dueños de verdad —desde la sesión de cada uno, no mirando permisos— y
+-- además lo que es propio de la demo: que la plantilla no se vea, que una demo
+-- no mande mails, que tenga techo, y que al borrarla no se lleve nada ajeno.
+DO $$
+DECLARE
+  v_a     UUID := '33333333-3333-3333-3333-333333333333';
+  v_b     UUID := '44444444-4444-4444-4444-444444444444';
+  v_real  UUID := '55555555-5555-5555-5555-555555555555';
+  v_plant UUID;
+  v_ra    JSONB;
+  v_rb    JSONB;
+  v_r     JSONB;
+  v_ca    UUID;
+  v_cb    UUID;
+  v_n     INTEGER;
+  v_m     INTEGER;
+  v_ok    BOOLEAN;
+  v_hold_b UUID;
+  v_hold_a UUID;
+  v_real_reserva UUID;
+  v_desde DATE;
+  v_uni   UUID;
+  v_ids   UUID[];
+BEGIN
+  INSERT INTO auth.users (id, email) VALUES
+    (v_a, 'demo-a@demo.alojaos.shop'),
+    (v_b, 'demo-b@demo.alojaos.shop'),
+    -- Una cuenta que NO es de demo, metida en una demo: la limpieza se tiene
+    -- que llevar el complejo y dejar la cuenta, pase lo que pase.
+    (v_real, 'alguien@ejemplo.test');
+
+  SELECT id INTO v_plant FROM complejos WHERE es_plantilla_demo;
+  PERFORM pg_temp.verificar('hay una plantilla de la demo', v_plant IS NOT NULL);
+
+  -- El reloj de vencimientos corre sobre todo, la plantilla incluida. Si sus
+  -- señas tuvieran un plazo de verdad, a las pocas horas quedarían vencidas y
+  -- cada demo nacería sin señas que mostrar. Pasó (ver la 026). Así que se
+  -- corre el reloj, y la plantilla tiene que seguir teniéndolas.
+  --
+  -- En el arnés no pasan cuatro horas, así que correr el reloj solo no prueba
+  -- nada: una seña con plazo de cuatro horas también sobreviviría. Lo que se
+  -- mira es la causa: que el plazo de la plantilla sea infinito.
+  PERFORM public.liberar_vencidas(NULL);
+  SELECT count(*) INTO v_n FROM reservas
+   WHERE complejo_id = v_plant AND estado = 'HOLD_TRANSFER' AND vence_el = 'infinity';
+  PERFORM pg_temp.verificar('las señas de la plantilla no vencen nunca, ni con el reloj corriendo',
+    v_n = 2, format('señas vivas y sin plazo en la plantilla: %s', v_n));
+  PERFORM pg_temp.verificar('y la página pública no la devuelve',
+    public.complejo_publico('plantilla-demo') IS NULL,
+    'complejo_publico(plantilla-demo) contestó algo');
+
+  v_ra := public.crear_demo(v_a, '192.0.2.1');
+  v_rb := public.crear_demo(v_b, '192.0.2.1');
+  v_ca := (v_ra->>'complejo_id')::uuid;
+  v_cb := (v_rb->>'complejo_id')::uuid;
+
+  PERFORM pg_temp.verificar('cada visitante recibe su propia copia',
+    (v_ra->>'ok')::boolean AND (v_rb->>'ok')::boolean AND v_ca <> v_cb,
+    format('A: %s · B: %s', v_ra, v_rb));
+
+  SELECT count(*) INTO v_n FROM unidades WHERE complejo_id = v_ca;
+  SELECT count(*) INTO v_m FROM unidades WHERE complejo_id = v_plant;
+  PERFORM pg_temp.verificar('la copia trae las unidades de la plantilla', v_n = v_m AND v_n > 0,
+    format('copia %s, plantilla %s', v_n, v_m));
+
+  SELECT count(*) INTO v_n FROM precios_unidad pu JOIN periodos_precio p ON p.id = pu.periodo_id
+   WHERE p.complejo_id = v_ca;
+  PERFORM pg_temp.verificar('y sus precios', v_n > 0, format('%s precios', v_n));
+
+  SELECT count(*) INTO v_n FROM periodos_precio
+   WHERE complejo_id = v_ca AND CURRENT_DATE + 7 BETWEEN desde AND hasta;
+  PERFORM pg_temp.verificar('y el calendario cubre desde ya, sin un hueco hasta el verano',
+    v_n = 1, format('%s períodos cubren la semana que viene', v_n));
+
+  SELECT count(*) INTO v_n FROM reservas
+   WHERE complejo_id = v_ca AND estado = 'HOLD_TRANSFER' AND vence_el > now() AND check_in >= CURRENT_DATE;
+  SELECT count(*) INTO v_m FROM reservas WHERE complejo_id = v_plant AND estado = 'HOLD_TRANSFER';
+  PERFORM pg_temp.verificar('y las señas de ejemplo, vivas y por delante',
+    v_n = v_m AND v_n > 0, format('vivas en la copia %s, en la plantilla %s', v_n, v_m));
+
+  PERFORM pg_temp.verificar('la copia sí se ve desde su página, marcada como demo',
+    (public.complejo_publico(v_ra->>'slug')->>'es_demo')::boolean,
+    coalesce(public.complejo_publico(v_ra->>'slug')::text, '(nada)'));
+
+  PERFORM pg_temp.verificar('un complejo de verdad no aparece como demo',
+    NOT (public.complejo_publico('cabanias-del-sol')->>'es_demo')::boolean);
+
+  v_r := public.crear_demo(v_a, '192.0.2.1');
+  PERFORM pg_temp.verificar('el mismo visitante no arma una segunda',
+    v_r->>'motivo' = 'ya_tiene', v_r::text);
+
+  -- ---------------------------------------------------------------
+  -- El aislamiento, desde la sesión del visitante A
+  -- ---------------------------------------------------------------
+  SELECT id INTO v_hold_b FROM reservas WHERE complejo_id = v_cb AND estado = 'HOLD_TRANSFER' LIMIT 1;
+  SELECT id INTO v_hold_a FROM reservas WHERE complejo_id = v_ca AND estado = 'HOLD_TRANSFER' LIMIT 1;
+
+  PERFORM set_config('request.jwt.claim.sub', v_a::text, true);
+  SET LOCAL ROLE authenticated;
+  SELECT count(*) INTO v_n FROM reservas WHERE complejo_id = v_ca;
+  SELECT count(*) INTO v_m FROM reservas WHERE complejo_id IN (v_cb, v_plant, 'aaaaaaaa-0000-0000-0000-000000000001');
+  v_r := public.mi_demo();
+  RESET ROLE;
+
+  PERFORM pg_temp.verificar('el visitante ve las reservas de su copia', v_n > 0, format('vio %s', v_n));
+  PERFORM pg_temp.verificar('y ninguna de otra demo, de la plantilla ni de un complejo de verdad',
+    v_m = 0, format('vio %s ajenas', v_m));
+  PERFORM pg_temp.verificar('mi_demo() le contesta la suya y no otra',
+    (v_r->>'complejo_id')::uuid = v_ca, coalesce(v_r::text, '(nada)'));
+
+  -- El contador del reloj: las señas de quien mira, no las de la plataforma.
+  -- Antes de la 027 un visitante con dos señas leía «4 esperando».
+  PERFORM set_config('request.jwt.claim.sub', v_a::text, true);
+  v_r := public.salud_del_vencimiento();
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+  SELECT count(*) INTO v_n FROM reservas
+   WHERE complejo_id = v_ca AND estado = 'HOLD_TRANSFER' AND vence_el >= now();
+  PERFORM pg_temp.verificar('el panel cuenta las señas del que mira, no las de toda la plataforma',
+    (v_r->>'esperando')::int = v_n, format('dijo %s, el visitante tiene %s', v_r->>'esperando', v_n));
+
+  PERFORM set_config('request.jwt.claim.sub', v_a::text, true);
+  BEGIN
+    PERFORM public.aprobar_sena(v_hold_b);
+    v_ok := false;
+  EXCEPTION WHEN insufficient_privilege THEN
+    v_ok := true;
+  END;
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+  PERFORM pg_temp.verificar('un visitante no puede aprobar una seña de la demo de otro', v_ok);
+  PERFORM pg_temp.verificar('y la seña del otro quedó como estaba',
+    (SELECT estado FROM reservas WHERE id = v_hold_b) = 'HOLD_TRANSFER');
+
+  -- ---------------------------------------------------------------
+  -- Los mails: una demo no le escribe a nadie
+  -- ---------------------------------------------------------------
+  PERFORM pg_temp.verificar('el aviso de una reserva de demo dice que es demo',
+    (public.datos_del_aviso(v_hold_a)->>'es_demo')::boolean);
+
+  SELECT id INTO v_real_reserva FROM reservas
+   WHERE complejo_id = 'aaaaaaaa-0000-0000-0000-000000000001' LIMIT 1;
+  v_r := public.anotar_aviso(v_real_reserva, 'sena_pendiente', 'DEMO');
+  PERFORM pg_temp.verificar('DEMO no se puede anotar en una reserva de verdad',
+    v_r->>'motivo' = 'no_es_demo', v_r::text);
+
+  PERFORM set_config('request.jwt.claim.sub', v_a::text, true);
+  SELECT count(*) INTO v_n FROM public.avisos_que_no_salieron(v_ca);
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+  PERFORM pg_temp.verificar('el panel de la demo no reclama mails que nunca se iban a mandar',
+    v_n = 0, format('reclamó %s', v_n));
+
+  -- ---------------------------------------------------------------
+  -- Reservar en la copia, como huésped
+  -- ---------------------------------------------------------------
+  -- Un tramo de dos noches en un período sin mínimo, desde la semana que
+  -- viene. Se busca en los datos de la copia y no se escribe a mano: las
+  -- fechas de la copia dependen del día en que corre el arnés.
+  SELECT greatest(p.desde, CURRENT_DATE + 10) INTO v_desde
+    FROM periodos_precio p
+   WHERE p.complejo_id = v_ca
+     AND p.etiqueta <> 'temporada alta'
+     AND p.hasta >= greatest(p.desde, CURRENT_DATE + 10) + 4
+   ORDER BY p.desde LIMIT 1;
+  SELECT id INTO v_uni FROM unidades WHERE complejo_id = v_ca AND codigo = 'SOL3';
+
+  v_r := public.crear_reserva(v_ra->>'slug', v_uni, v_desde, v_desde + 2, 2::smallint,
+                              'Huésped de prueba', '1', 'huesped@ejemplo.test', '1',
+                              '[]'::jsonb, 'transferencia', NULL, '192.0.2.50');
+  PERFORM pg_temp.verificar('se puede reservar en la copia, como huésped',
+    (v_r->>'ok')::boolean, v_r::text);
+
+  -- ---------------------------------------------------------------
+  -- El tope por IP
+  -- ---------------------------------------------------------------
+  v_ok := true;
+  FOR i IN 1..(public.limites_de_demo()->>'por_ip')::int LOOP
+    INSERT INTO auth.users (id, email) VALUES
+      (('66666666-6666-6666-6666-' || lpad(i::text, 12, '0'))::uuid, format('ip%s@demo.alojaos.shop', i));
+    v_r := public.crear_demo(('66666666-6666-6666-6666-' || lpad(i::text, 12, '0'))::uuid, '192.0.2.77');
+    v_ok := v_ok AND (v_r->>'ok')::boolean;
+  END LOOP;
+  INSERT INTO auth.users (id, email) VALUES ('66666666-6666-6666-6666-999999999999', 'ipx@demo.alojaos.shop');
+  v_r := public.crear_demo('66666666-6666-6666-6666-999999999999', '192.0.2.77');
+  PERFORM pg_temp.verificar('desde una IP entran las demos del tope, y la siguiente no',
+    v_ok AND v_r->>'motivo' = 'muchas_demos', v_r::text);
+
+  -- ---------------------------------------------------------------
+  -- Tirar y limpiar, sin llevarse nada ajeno
+  -- ---------------------------------------------------------------
+  SELECT count(*) INTO v_m FROM reservas WHERE complejo_id = v_plant;
+  v_ids := public.tirar_demo(v_a);
+  PERFORM pg_temp.verificar('tirar la demo borra la copia y devuelve qué borró',
+    v_ids = ARRAY[v_ca] AND NOT EXISTS (SELECT 1 FROM complejos WHERE id = v_ca),
+    format('devolvió %s', v_ids));
+  PERFORM pg_temp.verificar('con sus reservas',
+    NOT EXISTS (SELECT 1 FROM reservas WHERE complejo_id = v_ca));
+  PERFORM pg_temp.verificar('y deja la cuenta: reiniciar no te saca de la sesión',
+    EXISTS (SELECT 1 FROM auth.users WHERE id = v_a));
+  PERFORM pg_temp.verificar('la plantilla queda intacta',
+    (SELECT count(*) FROM reservas WHERE complejo_id = v_plant) = v_m);
+  PERFORM pg_temp.verificar('y la demo del otro también',
+    EXISTS (SELECT 1 FROM complejos WHERE id = v_cb));
+
+  v_r := public.crear_demo(v_real, NULL);
+  UPDATE demos SET vence_el = now() - INTERVAL '1 minute' WHERE user_id IN (v_b, v_real);
+  v_r := public.limpiar_demos();
+  PERFORM pg_temp.verificar('limpiar se lleva las demos vencidas',
+    NOT EXISTS (SELECT 1 FROM demos WHERE user_id IN (v_b, v_real))
+      AND NOT EXISTS (SELECT 1 FROM complejos WHERE id = v_cb),
+    v_r::text);
+  PERFORM pg_temp.verificar('y la cuenta de demo',
+    NOT EXISTS (SELECT 1 FROM auth.users WHERE id = v_b));
+  PERFORM pg_temp.verificar('pero nunca una cuenta que no es de demo',
+    EXISTS (SELECT 1 FROM auth.users WHERE id = v_real));
+  PERFORM pg_temp.verificar('ni un complejo de verdad',
+    EXISTS (SELECT 1 FROM complejos WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001'));
+
+  -- ---------------------------------------------------------------
+  -- Nada de esto se llama desde afuera
+  -- ---------------------------------------------------------------
+  PERFORM pg_temp.verificar('ni un visitante ni un dueño pueden crear, tirar o limpiar demos',
+    NOT has_function_privilege('anon', 'public.crear_demo(uuid,text)', 'EXECUTE')
+    AND NOT has_function_privilege('authenticated', 'public.crear_demo(uuid,text)', 'EXECUTE')
+    AND NOT has_function_privilege('authenticated', 'public.tirar_demo(uuid)', 'EXECUTE')
+    AND NOT has_function_privilege('authenticated', 'public.limpiar_demos()', 'EXECUTE')
+    AND NOT has_function_privilege('authenticated', 'public.tocar_demo(uuid)', 'EXECUTE'));
+  PERFORM pg_temp.verificar('ni leer la tabla de demos',
+    NOT has_table_privilege('anon', 'public.demos', 'SELECT')
+    AND NOT has_table_privilege('authenticated', 'public.demos', 'SELECT'));
+END $$;
+
+\echo ''
+-- lpad RECORTA cuando el texto es más largo que el ancho: con 2, la prueba
+-- 103 se imprimía como «10», igual que la 104 y la 105. Un número de prueba
+-- repetido manda a buscar la prueba equivocada.
+-- `NULA` y no `FALLA` cuando la expresión no se evaluó: son dos problemas
+-- distintos. Una que falla dice que el sistema hace algo que no debería; una
+-- nula dice que la prueba está mal escrita y no comprobó nada.
+SELECT lpad(n::text, 3) || '  ' ||
+       CASE WHEN indeterminada THEN 'NULA  ' WHEN paso THEN 'OK    ' ELSE 'FALLA ' END ||
+       nombre ||
+       CASE WHEN indeterminada
+              THEN E'\n        → la expresión dio NULL: no comprobó nada. Suele ser una comparación contra una columna nula.'
+                   || CASE WHEN coalesce(detalle, '') = '' THEN '' ELSE E'\n        → ' || detalle END
+            WHEN paso OR coalesce(detalle, '') = '' THEN ''
+            ELSE E'\n        → ' || detalle
+       END AS "prueba de la base"
+  FROM resultado ORDER BY n;
+
 
 \echo ''
 SELECT count(*) FILTER (WHERE paso) || ' de ' || count(*) || ' pasaron'
