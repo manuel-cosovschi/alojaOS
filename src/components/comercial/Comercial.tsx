@@ -71,6 +71,7 @@ import { CAPTURAS_SACADAS_EL } from './capturas.generado';
 import { Revelar } from './Revelar';
 import { Video } from './Video';
 import { BotonDemo } from './BotonDemo';
+import { CreditoSovare } from './Sovare';
 import { VIDEOS_GRABADOS_EL } from './videos.generado';
 import { CASO_CAPTURAS, CASO_GRABADO_EL, CASO_SITIO } from './caso.generado';
 import { Check, Cruz, Flecha, Punto } from './Iconos';
@@ -1209,27 +1210,76 @@ function CierreFinal() {
   );
 }
 
+/**
+ * El pie: las secciones, el contacto y el crédito de SOVARE, como en GastroOS.
+ *
+ * Las secciones repiten las de la barra de arriba a propósito: en el celular
+ * la barra las esconde, y el pie es el único lugar donde alguien que llegó al
+ * final puede volver a una sin scrollear toda la página.
+ */
 function Pie() {
+  const enlace = 'transition hover:text-white';
+  const titulo = 'text-[11px] font-semibold uppercase tracking-[0.16em] text-white';
   return (
     <footer className="px-6 py-12" style={{ background: NOCHE.fondo, borderTop: `1px solid ${NOCHE.borde}` }}>
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-5">
-        <div>
+      <div className="mx-auto grid max-w-6xl gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr]">
+        <div className="max-w-xs">
           <p className="text-lg font-black italic tracking-tight">AlojaOS</p>
-          <p className="mt-1 text-sm" style={{ color: NOCHE.textoTenue }}>
+          <p className="mt-2 text-sm" style={{ color: NOCHE.textoSuave }}>
             Reservas para complejos chicos. Hecho en Mar del Plata.
           </p>
         </div>
-        <div className="flex flex-wrap gap-5 text-sm">
-          <a className="transition hover:text-white" style={{ color: NOCHE.textoSuave }} href={ENLACE_WHATSAPP} target="_blank" rel="noopener">
-            WhatsApp
-          </a>
-          <a className="transition hover:text-white" style={{ color: NOCHE.textoSuave }} href={`mailto:${MAIL_CONTACTO}`}>
-            {MAIL_CONTACTO}
-          </a>
-          <a className="transition hover:text-white" style={{ color: NOCHE.textoSuave }} href="/login">
-            Entrar
-          </a>
+        <nav aria-label="Secciones">
+          <p className={titulo}>Secciones</p>
+          <ul className="mt-4 space-y-2.5 text-sm">
+            {SECCIONES.map((s) => (
+              <li key={s.id}>
+                <a className={enlace} style={{ color: NOCHE.textoSuave }} href={`#${s.id}`}>
+                  {s.texto}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+        <div>
+          <p className={titulo}>Contacto</p>
+          <ul className="mt-4 space-y-2.5 text-sm">
+            <li>
+              <a className={enlace} style={{ color: NOCHE.textoSuave }} href={ENLACE_WHATSAPP} target="_blank" rel="noopener">
+                WhatsApp
+              </a>
+            </li>
+            <li>
+              <a className={`${enlace} break-all`} style={{ color: NOCHE.textoSuave }} href={`mailto:${MAIL_CONTACTO}`}>
+                {MAIL_CONTACTO}
+              </a>
+            </li>
+            <li>
+              <a className={enlace} style={{ color: NOCHE.textoSuave }} href={CASO_SITIO} target="_blank" rel="noopener">
+                Un complejo que lo usa
+              </a>
+            </li>
+            <li>
+              <a className={enlace} style={{ color: NOCHE.textoSuave }} href="/login">
+                Entrar
+              </a>
+            </li>
+            <li>
+              <a className={enlace} style={{ color: NOCHE.textoSuave }} href="/privacidad">
+                Privacidad
+              </a>
+            </li>
+          </ul>
         </div>
+      </div>
+      <div
+        className="mx-auto mt-10 flex max-w-6xl flex-wrap items-center justify-between gap-4 pt-6"
+        style={{ borderTop: `1px solid ${NOCHE.borde}` }}
+      >
+        <CreditoSovare />
+        <p className="text-xs" style={{ color: NOCHE.textoSuave }}>
+          © {new Date().getFullYear()} AlojaOS
+        </p>
       </div>
     </footer>
   );
