@@ -178,13 +178,15 @@ async function main() {
     // la prueba vale igual local y en producción, y la que falla es la mezcla,
     // que es exactamente lo que pasó.
     //
-    // Hay dos afuera a propósito, y están escritos uno por uno: WhatsApp y el
+    // Hay tres afuera a propósito, y están escritos uno por uno: WhatsApp, el
     // sitio del caso, que la página muestra para que cualquiera entre y lo
-    // compare. Se toma del módulo que escribe `npm run caso`, el mismo que usa
-    // la página, así que no puede quedar un dominio viejo de un lado.
+    // compare —se toma del módulo que escribe `npm run caso`, el mismo que usa
+    // la página, así que no puede quedar un dominio viejo de un lado—, y el
+    // panel interno de SOVARE, al que lleva el crédito del pie como en GastroOS
+    // (`NEXT_PUBLIC_SOVARE_PANEL_URL`).
     {
       const miDominio = new URL(BASE).hostname;
-      const deAfueraAProposito = new Set(['wa.me', new URL(CASO_SITIO).hostname]);
+      const deAfueraAProposito = new Set(['wa.me', new URL(CASO_SITIO).hostname, 'sovare-panel.vercel.app']);
       const absolutos = [...new Set(enlaces.filter((h) => /^https?:\/\//.test(h)))];
       const afuera = absolutos.filter((h) => {
         const host = new URL(h).hostname;
