@@ -31,7 +31,8 @@
     "videos": "tsx scripts/videos.mts",
     "caso": "tsx scripts/caso-las-canas.mts",
     "demo:plantilla": "tsx scripts/demo-plantilla.mts",
-    "respaldo": "tsx scripts/respaldo.mts"
+    "respaldo": "tsx scripts/respaldo.mts",
+    "prueba:conv": "tsx scripts/prueba-conv.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
