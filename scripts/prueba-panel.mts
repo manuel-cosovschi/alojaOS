@@ -205,7 +205,7 @@ async function senaDePrueba(conComprobante: boolean, noches: [string, string]): 
       origen: 'web',
       huesped_nombre: HUESPED,
       huesped_telefono: '5490000008888',
-      huesped_email: 'panel@ejemplo.test',
+      huesped_email: 'delivered+panel@resend.dev',
       personas: 2,
       importe: 200000,
       vence_el: new Date(Date.now() + 5 * 3600_000).toISOString(),

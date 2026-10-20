@@ -51,6 +51,26 @@ export type ResultadoAviso =
 const API = 'https://api.resend.com/emails';
 
 /**
+ * Los dominios que no existen por norma (RFC 2606 y 6761).
+ *
+ * Las pruebas contra producción reservan con `…@ejemplo.test`, y hasta acá cada
+ * reserva así salía de verdad y rebotaba: el 20/10, 51 de los 58 mails de la
+ * cuenta de Resend eran rebotes. Un proveedor de mail frena las cuentas que
+ * rebotan mucho —Resend avisa pasando el 4 %—, y frenada la cuenta no le llega
+ * nada a nadie: ni el «tu reserva está confirmada» del huésped real ni el aviso
+ * de una consulta. Mandarle a una dirección que no puede existir sólo suma
+ * rebotes, así que no se manda, y queda anotado como lo que es: no salió.
+ *
+ * Las pruebas que necesitan ver salir un mail usan la casilla de prueba de
+ * Resend (`delivered+…@resend.dev`), que lo recibe sin rebotar.
+ */
+const DOMINIOS_DE_PRUEBA = /(\.(test|example|invalid|localhost)|@example\.(com|net|org))$/i;
+
+export function esDeUnDominioDePrueba(direccion: string): boolean {
+  return DOMINIOS_DE_PRUEBA.test(direccion.trim());
+}
+
+/**
  * El remitente por defecto.
  *
  * Tiene que ser un dominio verificado en Resend. Mientras no haya dominio,
@@ -101,6 +121,12 @@ export async function mandar(mail: Mail): Promise<ResultadoAviso> {
   }
   if (!mail.a || !mail.a.includes('@')) {
     return { estado: 'FALLO', error: `la dirección no parece un mail: ${mail.a}` };
+  }
+  if (esDeUnDominioDePrueba(mail.a)) {
+    return {
+      estado: 'FALLO',
+      error: `${mail.a} es de un dominio reservado para pruebas: no existe, y mandarle rebota`,
+    };
   }
 
   try {

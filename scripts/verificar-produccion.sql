@@ -553,4 +553,14 @@ SELECT 166, 'la plantilla de la demo conserva sus señas: el reloj no se las ven
        CASE WHEN (SELECT count(*) FROM reservas r JOIN complejos c ON c.id = r.complejo_id
                    WHERE c.es_plantilla_demo AND r.estado = 'HOLD_TRANSFER' AND r.vence_el = 'infinity') = 2
             THEN 'ok' ELSE 'FALTA' END
+UNION ALL
+-- Las consultas de /conv son datos de gente que todavía no es cliente: las
+-- escribe y las lee sólo el servidor.
+SELECT 167, 'las consultas de /conv no las lee ni las escribe nadie desde la API',
+       CASE WHEN (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.consultas'::regclass)
+             AND NOT has_table_privilege('anon', 'public.consultas', 'SELECT')
+             AND NOT has_table_privilege('anon', 'public.consultas', 'INSERT')
+             AND NOT has_table_privilege('authenticated', 'public.consultas', 'SELECT')
+             AND NOT has_table_privilege('authenticated', 'public.consultas', 'INSERT')
+            THEN 'ok' ELSE 'FALTA' END
 ORDER BY orden;
