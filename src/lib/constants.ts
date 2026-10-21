@@ -81,6 +81,8 @@ export const MAIL_CONTACTO =
  * desde la página comercial tiene una conversación distinta de alguien que
  * escribe desde la página de un complejo.
  */
-export const ENLACE_WHATSAPP = `https://wa.me/${WHATSAPP_CONTACTO}?text=${encodeURIComponent(
-  'Hola, vi AlojaOS y quiero saber más.'
-)}`;
+export function enlaceWhatsapp(mensaje: string): string {
+  return `https://wa.me/${WHATSAPP_CONTACTO}?text=${encodeURIComponent(mensaje)}`;
+}
+
+export const ENLACE_WHATSAPP = enlaceWhatsapp('Hola, vi AlojaOS y quiero saber más.');
