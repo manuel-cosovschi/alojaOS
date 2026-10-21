@@ -157,7 +157,9 @@ async function main() {
       verificar(antes, 'la calculadora está en la página');
 
       const perilla = page.getByRole('slider', { name: /Señas que se te caen/ });
-      const resultado = () => page.locator('p.text-3xl').first().innerText();
+      // Dentro de #cuenta: «el primer número grande de la página» dejó de ser
+      // el de la calculadora cuando los planes subieron arriba de ella.
+      const resultado = () => page.locator('#cuenta p.text-3xl').first().innerText();
       const inicial = await resultado();
       await perilla.fill('10');
       await page.waitForTimeout(200);
