@@ -177,6 +177,42 @@ export default async function PaginaDeConversion({ searchParams }: { searchParam
           </div>
         </section>
 
+        {/* Los planes, apenas termina el hero. Antes iban quintos, después del
+            problema, el panel y el proceso: el que llegaba de un anuncio tenía
+            que bajar varias pantallas para ver cuánto sale. */}
+        <Seccion id="planes">
+          <div data-revelar>
+            <Rotulo>Precio</Rotulo>
+            <Titulo acento="y sin comisión">Un número por mes,</Titulo>
+          </div>
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {PLANES.map((p) => (
+              <div key={p.nombre} className="flex flex-col rounded-2xl p-5" style={p.destacado ? { background: `${NOCHE.menta}0f`, border: `1px solid ${NOCHE.menta}55` } : tarjeta}>
+                <h3 className="text-lg font-black uppercase tracking-tight">{p.nombre}</h3>
+                <p className="text-sm" style={{ color: NOCHE.textoTenue }}>{p.unidades}</p>
+                <p className="mt-3 text-3xl font-black tabular-nums">
+                  {p.desde && <span className="text-base font-bold">desde </span>}
+                  {plata(p.mensual)}
+                </p>
+                <p className="text-sm" style={{ color: NOCHE.textoTenue }}>por mes · puesta a punto {plata(p.puestaAPunto)}</p>
+                <p className="mt-3 flex-1 text-sm" style={{ color: NOCHE.textoSuave }}>{p.paraQuien}</p>
+                {/* No hay pago online: el botón de cada plan lleva a la consulta,
+                    que es el paso real para contratarlo. */}
+                <a
+                  href="#consulta"
+                  className="mt-5 inline-flex h-11 items-center justify-center rounded-xl text-sm font-bold transition hover:brightness-110"
+                  style={p.destacado ? { background: NOCHE.accion, color: '#fff' } : { border: `1px solid ${NOCHE.borde}` }}
+                >
+                  Quiero el plan {p.nombre}
+                </a>
+              </div>
+            ))}
+          </div>
+          <p className="mt-6 text-center text-sm" style={{ color: NOCHE.textoSuave }}>
+            Sin comisión por reserva y sin permanencia. Se contrata después de la charla: no hay pago online.
+          </p>
+        </Seccion>
+
         <Seccion hondo>
           <div data-revelar>
             <Rotulo>Lo que cambia</Rotulo>
@@ -250,30 +286,6 @@ export default async function PaginaDeConversion({ searchParams }: { searchParam
               </li>
             ))}
           </ol>
-        </Seccion>
-
-        <Seccion id="planes">
-          <div data-revelar>
-            <Rotulo>Precio</Rotulo>
-            <Titulo acento="y sin comisión">Un número por mes,</Titulo>
-          </div>
-          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {PLANES.map((p) => (
-              <div key={p.nombre} className="flex flex-col rounded-2xl p-5" style={p.destacado ? { background: `${NOCHE.menta}0f`, border: `1px solid ${NOCHE.menta}55` } : tarjeta}>
-                <h3 className="text-lg font-black uppercase tracking-tight">{p.nombre}</h3>
-                <p className="text-sm" style={{ color: NOCHE.textoTenue }}>{p.unidades}</p>
-                <p className="mt-3 text-3xl font-black tabular-nums">
-                  {p.desde && <span className="text-base font-bold">desde </span>}
-                  {plata(p.mensual)}
-                </p>
-                <p className="text-sm" style={{ color: NOCHE.textoTenue }}>por mes · puesta a punto {plata(p.puestaAPunto)}</p>
-                <p className="mt-3 flex-1 text-sm" style={{ color: NOCHE.textoSuave }}>{p.paraQuien}</p>
-              </div>
-            ))}
-          </div>
-          <p className="mt-6 text-center text-sm" style={{ color: NOCHE.textoSuave }}>
-            Sin comisión por reserva y sin permanencia. Se contrata después de la charla: no hay pago online.
-          </p>
         </Seccion>
 
         <Seccion hondo ancho="max-w-3xl">
