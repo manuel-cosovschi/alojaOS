@@ -51,7 +51,7 @@
  * por `npm run capturas`, con la fecha a la vista y el demo enlazado al lado.
  */
 
-import { ENLACE_WHATSAPP, MAIL_CONTACTO } from '@/lib/constants';
+import { ENLACE_WHATSAPP, MAIL_CONTACTO, enlaceWhatsapp } from '@/lib/constants';
 import { MARCA, NOCHE } from '@/lib/marca-alojaos';
 import { CASO, HALLAZGOS } from '@/lib/caso';
 import { direccionDelComplejo } from '@/lib/tenant';
@@ -77,13 +77,20 @@ import { CASO_CAPTURAS, CASO_GRABADO_EL, CASO_SITIO } from './caso.generado';
 import { Check, Cruz, Flecha, Punto } from './Iconos';
 import Image from 'next/image';
 
+const plata = (n: number) =>
+  new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(n);
+
+/** El plan más barato, para el «desde» del hero. Sale de la misma lista que las
+ *  tarjetas: si cambia un precio, cambia en los dos lugares. */
+const PRECIO_MAS_BAJO = Math.min(...PLANES.map((p) => p.mensual));
+
 const SECCIONES = [
   { id: 'problema', texto: 'El problema' },
   { id: 'producto', texto: 'El producto' },
+  { id: 'precio', texto: 'Precio' },
   { id: 'demo', texto: 'Demo' },
   { id: 'caso', texto: 'El caso' },
   { id: 'cuenta', texto: 'La cuenta' },
-  { id: 'precio', texto: 'Precio' },
 ];
 
 /**
@@ -154,15 +161,20 @@ export function Comercial() {
       <Hero />
       <Cinta />
       <ElProblema />
+      <ElPanel />
+      {/* El precio va acá, en la tercera pantalla y no en la décima: quien
+          llega preguntándose «¿cuánto sale?» —que es casi todo el que llega—
+          lo encuentra apenas entendió qué es, en vez de irse antes de llegar.
+          Lo que viene después (el demo, el caso, la cuenta) es para el que ya
+          vio el número y necesita convencerse, no para hacerle esperar. */}
+      <Precio />
+      <ElDemo />
+      <ElCaso />
       <AntesYDespues />
       <ComoEmpezas />
-      <ElPanel />
       <LaPaginaDelHuesped />
-      <ElDemo />
       <LaRegla />
-      <ElCaso />
       <LaCuenta />
-      <Precio />
       <Preguntas />
       <CierreFinal />
       <Pie />
@@ -441,6 +453,16 @@ function Hero() {
             <BotonPrincipal href={ENLACE_WHATSAPP}>Hablemos por WhatsApp</BotonPrincipal>
             <BotonSecundario href="#demo">Probá el demo guiado</BotonSecundario>
           </div>
+
+          {/* El número, ya en la primera pantalla. Es la pregunta que más
+              gente se va sin hacer: el que no ve un precio supone que es caro
+              o que hay que pedirlo, y las dos cosas lo hacen cerrar la pestaña. */}
+          <p className="mt-5 text-[15px]" style={{ color: NOCHE.textoSuave }}>
+            Desde <strong className="text-white">{plata(PRECIO_MAS_BAJO)} por mes</strong>, sin comisión.{' '}
+            <a className="whitespace-nowrap font-semibold underline underline-offset-4 transition hover:text-white" href="#precio">
+              Ver planes
+            </a>
+          </p>
 
           {/* Las tres cosas que esta persona pregunta antes de nada. */}
           <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-[13px] font-semibold">
@@ -1037,9 +1059,6 @@ function Precio() {
     ...p,
     porTemporada: Math.round((p.mensual * MESES_QUE_SE_PAGAN_POR_ANIO) / CUOTAS_DE_TEMPORADA),
   }));
-  const plata = (n: number) =>
-    new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(n);
-
   return (
     <Seccion id="precio">
       <div data-revelar>
@@ -1102,6 +1121,25 @@ function Precio() {
               <p className="mt-5 flex-1 text-sm leading-relaxed" style={{ color: NOCHE.textoSuave }}>
                 {p.paraQuien}
               </p>
+
+              {/* Cada plan con su botón. Antes las tarjetas no tenían ninguno:
+                  el que se decidía mirando un precio tenía que bajar hasta el
+                  final a buscar cómo escribir. El mensaje ya dice qué plan
+                  eligió, para que quien contesta no tenga que preguntarlo. */}
+              <a
+                href={enlaceWhatsapp(`Hola, vi AlojaOS y me interesa el plan ${p.nombre}.`)}
+                target="_blank"
+                rel="noopener"
+                data-plan={p.nombre}
+                className="mt-6 inline-flex items-center justify-center rounded-xl px-4 py-3 text-sm font-bold transition hover:brightness-110"
+                style={
+                  p.destacado
+                    ? { background: NOCHE.accion, color: '#fff' }
+                    : { border: `1px solid ${NOCHE.borde}`, color: NOCHE.texto }
+                }
+              >
+                {p.desde ? 'Pedí tu precio' : `Quiero el ${p.nombre}`}
+              </a>
             </div>
           </div>
         ))}
